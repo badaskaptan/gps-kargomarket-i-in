@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backend #1 API Test Panel</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+        button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #005a8b; }
+        textarea { width: 100%; height: 200px; font-family: monospace; }
+        input { width: 100%; padding: 8px; margin: 5px 0; }
+        .response { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚛 Backend #1 API Test Panel</h1>
+        
+        <div class="section">
+            <h2>1️⃣ İş Emri Oluştur (Create Job)</h2>
+                  <input 
+        type="text" 
+        id="taskTitle" 
+        placeholder="Görev Başlığı (örn: Ankara → İstanbul)" 
+        aria-label="Görev Başlığı"
+        style="width: 300px; padding: 8px; margin: 5px;" 
+      >
+            <input type="text" id="customerName" placeholder="Müşteri Adı" value="Test Müşteri">
+            <input type="text" id="customerPhone" placeholder="Telefon" value="+90 555 123 4567">
+            <input type="text" id="address" placeholder="Teslimat Adresi" value="Test Adres İstanbul">
+            <input type="text" id="priority" placeholder="Öncelik (normal/urgent)" value="urgent">
+            <button onclick="createJob()">İş Emri Oluştur</button>
+            <div id="createJobResponse" class="response"></div>
+        </div>
+
+        <div class="section">
+            <h2>2️⃣ GPS Verisi Çek (Get Tracking)</h2>
+            <input type="text" id="trackingIlanNo" placeholder="İlan No" value="KRG2025001">
+            <button onclick="getTracking()">GPS Verisi Çek</button>
+            <div id="trackingResponse" class="response"></div>
+        </div>
+
+        <div class="section">
+            <h2>3️⃣ API Response Log</h2>
+            <textarea 
+              id="apiLog" 
+              readonly 
+              aria-label="API Log Output"
+              placeholder="API responses will appear here..."
+            ></textarea>
+            <button onclick="clearLog()">Temizle</button>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://iawqwfbvbigtbvipddao.supabase.co/functions/v1';
+        const API_KEY = 'test_api_key_123'; // Test için
+
+        function log(message) {
+            const logArea = document.getElementById('apiLog');
+            logArea.value += `[${new Date().toLocaleTimeString()}] ${message}\n`;
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        async function createJob() {
+            const data = {
+                ilan_no: document.getElementById('ilanNo').value,
+                customer_info: {
+                    name: document.getElementById('customerName').value,
+                    phone: document.getElementById('customerPhone').value,
+                    email: 'test@example.com'
+                },
+                delivery_address: {
+                    address: document.getElementById('address').value,
+                    city: 'İstanbul'
+                },
+                varis_konum: [41.0082, 28.9784], // Test koordinatları
+                priority: document.getElementById('priority').value,
+                cargo_type: 'document',
+                api_key: API_KEY
+            };
+
+            log(`Creating job: ${data.ilan_no}`);
+            
+            try {
+                const response = await fetch(`${API_BASE}/create-job`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                document.getElementById('createJobResponse').innerHTML = 
+                    `<strong>Status:</strong> ${response.status}<br>
+                     <strong>Response:</strong> <pre>${JSON.stringify(result, null, 2)}</pre>`;
+                
+                log(`Create job response: ${JSON.stringify(result)}`);
+            } catch (error) {
+                log(`Create job error: ${error.message}`);
+                document.getElementById('createJobResponse').innerHTML = 
+                    `<strong>Error:</strong> ${error.message}`;
+            }
+        }
+
+        async function getTracking() {
+            const ilanNo = document.getElementById('trackingIlanNo').value;
+            
+            log(`Getting tracking for: ${ilanNo}`);
+            
+            try {
+                const response = await fetch(
+                    `${API_BASE}/get-tracking?ilan_no=${ilanNo}&api_key=${API_KEY}`
+                );
+                
+                const result = await response.json();
+                document.getElementById('trackingResponse').innerHTML = 
+                    `<strong>Status:</strong> ${response.status}<br>
+                     <strong>Response:</strong> <pre>${JSON.stringify(result, null, 2)}</pre>`;
+                
+                log(`Tracking response: ${JSON.stringify(result)}`);
+            } catch (error) {
+                log(`Tracking error: ${error.message}`);
+                document.getElementById('trackingResponse').innerHTML = 
+                    `<strong>Error:</strong> ${error.message}`;
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('apiLog').value = '';
+        }
+
+        // Sayfa yüklendiğinde log başlat
+        log('Backend #1 API Test Panel hazır');
+    </script>
+</body>
+</html>

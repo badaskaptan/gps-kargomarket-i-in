@@ -1,0 +1,11 @@
+{
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "deno.enable": true,
+  "deno.unstable": true,
+  "typescript.suggest.autoImports": false,
+  "files.associations": {
+    "supabase/functions/**/*.ts": "typescript"
+  },
+  "typescript.validate.enable": false,
+  "eslint.enable": false
+}
