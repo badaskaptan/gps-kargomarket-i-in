@@ -1,8 +1,8 @@
+// @ts-nocheck
 // 🌉 BRIDGE SYSTEM: Backend1 ↔ Backend2 Bağlantısı
 // GPS Backend'inde çalışan Edge Function
 
 // Bridge API: GPS Backend ↔ Backend1 Communication
-// @deno-types="https://deno.land/x/supabase@1.103.0/mod.ts"
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 

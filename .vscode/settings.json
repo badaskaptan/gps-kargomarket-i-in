@@ -1,0 +1,13 @@
+{
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "files.associations": {
+    "**/supabase/functions/**/*.ts": "typescript"
+  },
+  "typescript.suggest.autoImports": false,
+  "[typescript]": {
+    "editor.tabSize": 2
+  },
+  "files.exclude": {
+    "**/supabase/functions/**/*.ts": false
+  }
+}
