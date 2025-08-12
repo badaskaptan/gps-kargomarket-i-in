@@ -131,29 +131,33 @@ interface GPSTaskRequest {
 ### Test İçin Örnek Data
 ```javascript
 const testData = {
-  ilan_no: "KRG2025TEST001",
-  customer_info: "Test Kargo Müşterisi A.Ş.",
-  delivery_address: "İstanbul Kadıköy Moda Mahallesi Test Sokak No:1",
+  ilan_no: "NT250801210715",
+  customer_info: "emrahbadas1980 (gezerholding) - 05412879705",
+  delivery_address: "MERSIN",
+  cargo_type: "vegetable_oils",
+  priority: "normal",
   api_key: "KARGOMARKETING_API_KEY_2025"
 };
 ```
 
-### Browser Console Test
+### Browser Console Test (Gerçek Kargomarketing Verisi)
 ```javascript
-// Bu kodu browser console'da çalıştırarak test edebilirsin
+// Kargomarketing.com'dan alınan gerçek veri ile test
 fetch('https://rmqwrdeaecjyyalbnvbq.supabase.co/functions/v1/add-gps-task', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    ilan_no: "KRG2025TEST002",
-    customer_info: "Console Test Müşteri",
-    delivery_address: "Ankara Test Mahallesi",
+    ilan_no: "NT250801210715",
+    customer_info: "emrahbadas1980 (gezerholding) - 05412879705",
+    delivery_address: "MERSIN",
+    cargo_type: "vegetable_oils",
+    priority: "normal",
     api_key: "KARGOMARKETING_API_KEY_2025"
   })
 })
 .then(res => res.json())
-.then(data => console.log('Response:', data))
-.catch(err => console.error('Error:', err));
+.then(data => console.log('GPS Transfer Result:', data))
+.catch(err => console.error('Transfer Error:', err));
 ```
 
 ---

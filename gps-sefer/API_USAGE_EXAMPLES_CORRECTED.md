@@ -1,20 +1,21 @@
 # 📞 kargomarketing.com Supabase Integration Quick Reference
 
-## 🎯 Özet: GPS Sistemi Bridge API Architecture
+## 🎯 Özet: GPS Sistemi Entegrasyonu (SUPABASE-TO-SUPABASE)
 
-**IMPLEMENTED**: Dual Supabase approach with Bridge API pattern for proper separation of concerns.
+**CORRECTED**: kargomarketing.com also uses Supabase (different project), not PHP/Laravel.
 
 ### Sistem Özeti
-- **Backend #1**: kargomarketing.com Supabase Project (`https://rmqwrdeaecjyyalbnvbq.supabase.co`)
-- **Backend #2**: GPS System Supabase Project (AKTIF) (`https://iawqwfbvbigtbvipddao.supabase.co`)  
-- **Bridge API**: GPS Backend Edge Functions (`https://iawqwfbvbigtbvipddao.supabase.co/functions/v1/bridge-api`)
-- **Current Architecture**: Single backend connection (GPS only) with Bridge API communication
+
+- **Backend #1**: kargomarketing.com Supabase Project
+- **Backend #2**: GPS System Supabase Project (`https://iawqwfbvbigtbvipddao.supabase.co`)
+- **API Key**: `production_api_key_12345` (production), `test_api_key_123` (test)
+- **Entegrasyon Yöntemi**: Supabase Edge Functions + REST API calls
 
 ---
 
 ## 1️⃣ İlan Onayı → GPS Görev Oluşturma
 
-### kargomarketing.com Edge Function:
+### kargomarketing.com Edge Function
 
 ```typescript
 // create-gps-job.ts (kargomarketing.com Supabase)
@@ -110,7 +111,7 @@ serve(async (req: Request) => {
 
 ## 2️⃣ Canlı GPS Verilerini Çekme
 
-### kargomarketing.com tracking Edge Function:
+### kargomarketing.com tracking Edge Function
 
 ```typescript
 // get-gps-tracking.ts (kargomarketing.com Supabase)
@@ -356,201 +357,173 @@ export const GPSTrackingWidget: React.FC<GPSWidgetProps> = ({ ilanNo }) => {
 // <GPSTrackingWidget ilanNo="KRG2025001" />
 ```
 
-```javascript
-class KargoGPSTracker {
-    async startTracking(ilanNo) {
-        const response = await fetch(`/api/gps/tracking/${ilanNo}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            this.displayTrackingData(ilanNo, data);
-            
-            // 30 saniyede bir güncelle
-            setInterval(() => {
-                this.updateTracking(ilanNo);
-            }, 30000);
-        }
-    }
-    
-    displayTrackingData(ilanNo, trackingData) {
-        const container = document.getElementById(`gps-tracking-${ilanNo}`);
-        const lastLocation = trackingData.last_location;
-        
-        container.innerHTML = `
-            <div class="gps-widget">
-                <h5>📍 GPS Takip - ${ilanNo}</h5>
-                <p><strong>Durum:</strong> ${this.getStatusText(trackingData.status)}</p>
-                ${lastLocation ? `
-                    <p><strong>Son Konum:</strong> ${lastLocation.lat.toFixed(6)}, ${lastLocation.lon.toFixed(6)}</p>
-                    <p><strong>Son Güncelleme:</strong> ${new Date(lastLocation.timestamp).toLocaleString('tr-TR')}</p>
-                ` : '<p>Henüz konum verisi yok</p>'}
-                <div id="map-${ilanNo}" style="height: 300px;"></div>
-            </div>
-        `;
-        
-        // Google Maps güncelle
-        this.updateMap(ilanNo, trackingData);
-    }
-    
-    getStatusText(status) {
-        const statusMap = {
-            'atanmamis': 'Şoför Atanmamış',
-            'atandi': 'Şoför Atandı', 
-            'onaylandi': 'Şoför Onayladı',
-            'basladi': 'Sefer Başladı',
-            'devam_ediyor': 'Devam Ediyor',
-            'tamamlandi': 'Tamamlandı'
-        };
-        return statusMap[status] || status;
-    }
-}
-
-// Kullanım
-window.kargoGPS = new KargoGPSTracker();
-kargoGPS.startTracking('KRG2025001');
-```
-
 ---
 
-## 5️⃣ Database Değişiklikleri
+## 5️⃣ Database Schema Updates
 
-### kargomarketing.com veritabanı güncellemesi:
+### kargomarketing.com Supabase veritabanı güncellemesi
 
 ```sql
--- İlanlar tablosuna GPS kolonları ekle
-ALTER TABLE ilanlar 
-ADD COLUMN gps_job_created BOOLEAN DEFAULT FALSE,
-ADD COLUMN gps_job_id INT NULL,
-ADD COLUMN gps_driver_id VARCHAR(255) NULL,
-ADD COLUMN gps_status ENUM(
-    'waiting', 'driver_assigned', 'trip_started', 'delivered', 'cancelled'
-) DEFAULT 'waiting',
-ADD COLUMN gps_last_update TIMESTAMP NULL;
+-- İlanlar tablosuna GPS entegrasyonu için kolonlar ekle
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS gps_job_created BOOLEAN DEFAULT false;
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS gps_job_id TEXT;
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS gps_status TEXT DEFAULT 'waiting';
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS driver_name TEXT;
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS driver_phone TEXT;
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS current_lat DECIMAL(10,8);
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS current_lng DECIMAL(11,8);
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS trip_start_time TIMESTAMPTZ;
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS trip_end_time TIMESTAMPTZ;
+ALTER TABLE ilanlar ADD COLUMN IF NOT EXISTS gps_last_update TIMESTAMPTZ;
 
--- Index'ler
-CREATE INDEX idx_ilanlar_gps_status ON ilanlar(gps_status);
-CREATE INDEX idx_ilanlar_ilan_no ON ilanlar(ilan_no);
+-- GPS durumları için enum
+CREATE TYPE gps_status_enum AS ENUM ('waiting', 'assigned', 'in_progress', 'completed', 'cancelled');
+ALTER TABLE ilanlar ALTER COLUMN gps_status TYPE gps_status_enum USING gps_status::gps_status_enum;
 ```
 
 ---
 
-## 6️⃣ Route Definitions
+## 6️⃣ Email & SMS Notifications
 
-### Laravel routes ayarları:
+### kargomarketing.com notification Edge Function
 
-```php
-// routes/api.php
-Route::prefix('api/gps')->group(function () {
-    Route::post('/create-job/{ilan_id}', [GPSController::class, 'createJob']);
-    Route::get('/tracking/{ilan_no}', [GPSController::class, 'getTracking']);
-});
+```typescript
+// send-notifications.ts (kargomarketing.com Supabase)
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// Webhook routes (public)
-Route::prefix('webhook/gps')->group(function () {
-    Route::post('/driver-assigned', [GPSWebhookController::class, 'driverAssigned']);
-    Route::post('/trip-started', [GPSWebhookController::class, 'tripStarted']);
-    Route::post('/trip-completed', [GPSWebhookController::class, 'tripCompleted']);
-});
-
-// Public tracking page
-Route::get('/tracking/{ilan_no}', [PublicTrackingController::class, 'show']);
-```
-
----
-
-## 7️⃣ Environment Variables
-
-### .env dosyası eklemeleri:
-
-```env
-# GPS Sistemi
-GPS_API_KEY=production_api_key_12345
-GPS_WEBHOOK_SECRET=webhook_secret_key_12345
-GPS_NOTIFICATIONS_ENABLED=true
-```
-
----
-
-## 8️⃣ Email Template Örneği
-
-### Şoför atandığında müşteri emaili:
-
-```php
-function sendDriverAssignedEmail($customer_email, $ilan_no, $customer_name) {
-    $subject = "Kargonuz Şoföre Atandı - İlan No: {$ilan_no}";
+serve(async (req: Request) => {
+  try {
+    const { ilan_no, notification_type, driver_info } = await req.json()
     
-    $html = "
-    <h2>🚛 Kargonuz Şoföre Atandı!</h2>
-    <p>Merhaba <strong>{$customer_name}</strong>,</p>
-    <p>İlan No <strong>{$ilan_no}</strong> için kargonuz şoföre atanmıştır.</p>
+    const supabaseKargo = createClient(
+      Deno.env.get('KARGOMARKETING_SUPABASE_URL')!,
+      Deno.env.get('KARGOMARKETING_SERVICE_KEY')!
+    )
     
-    <div style='background: #f0f8ff; padding: 15px; margin: 20px 0;'>
-        <h3>📍 Canlı Takip Sistemi Aktif!</h3>
-        <p>Kargonuzun konumunu gerçek zamanlı takip edebilirsiniz:</p>
-        
-        <a href='https://kargomarketing.com/tracking/{$ilan_no}' 
-           style='background: #28a745; color: white; padding: 10px 20px; text-decoration: none;'>
-            🗺️ Canlı Takip
-        </a>
-    </div>
+    // İlan bilgilerini çek
+    const { data: ilan } = await supabaseKargo
+      .from('ilanlar')
+      .select('*')
+      .eq('ilan_no', ilan_no)
+      .single()
     
-    <p>Teşekkürler,<br>kargomarketing.com</p>
-    ";
+    if (!ilan) {
+      throw new Error('İlan bulunamadı')
+    }
     
-    Mail::to($customer_email)->send(new GPSNotificationMail($subject, $html));
+    // Email gönder (Resend/SendGrid/etc kullanarak)
+    if (ilan.musteri_email) {
+      await sendEmail({
+        to: ilan.musteri_email,
+        subject: getEmailSubject(notification_type),
+        template: getEmailTemplate(notification_type),
+        data: {
+          customer_name: ilan.musteri_adi,
+          ilan_no: ilan_no,
+          driver_info: driver_info,
+          tracking_url: `https://kargomarketing.com/tracking/${ilan_no}`
+        }
+      })
+    }
+    
+    // SMS gönder (Twilio/Netgsm/etc kullanarak)
+    if (ilan.musteri_telefon) {
+      await sendSMS({
+        to: ilan.musteri_telefon,
+        message: getSMSMessage(notification_type, ilan, driver_info)
+      })
+    }
+    
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+  } catch (error) {
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+})
+
+function getEmailSubject(type: string): string {
+  const subjects = {
+    'driver_assigned': '🚛 Şoför Atandı - Takip Bilgileri',
+    'trip_started': '📍 Kargonuz Yola Çıktı',
+    'trip_completed': '✅ Kargonuz Teslim Edildi'
+  }
+  return subjects[type] || 'Kargo Güncelleme'
+}
+
+function getSMSMessage(type: string, ilan: any, driver_info: any): string {
+  const messages = {
+    'driver_assigned': `Sayın ${ilan.musteri_adi}, yükünüz için şoför atandı. Şoför: ${driver_info?.name} (${driver_info?.phone}). Takip: kargomarketing.com/tracking/${ilan.ilan_no}`,
+    'trip_started': `Kargonuz yola çıktı! Takip: kargomarketing.com/tracking/${ilan.ilan_no}`,
+    'trip_completed': `Kargonuz başarıyla teslim edildi. Teşekkürler!`
+  }
+  return messages[type] || 'Kargo durumu güncellendi'
 }
 ```
 
 ---
 
-## 9️⃣ Test Komutları
+## 🔧 Test ve Kurulum
 
-### API test'leri:
+### Test API calls
 
 ```bash
-# GPS görev oluştur (test)
-curl -X POST https://iawqwfbvbigtbvipddao.supabase.co/functions/v1/create-job \
+# Test ortamı için GPS job oluşturma
+curl -X POST https://your-kargomarketing-supabase.supabase.co/functions/v1/create-gps-job \
   -H "Content-Type: application/json" \
-  -d '{
-    "api_key": "test_api_key_123",
-    "ilan_no": "TEST_001", 
-    "customer_info": {"name": "Test Müşteri"},
-    "delivery_address": {"city": "İstanbul"},
-    "priority": "normal"
-  }'
+  -H "Authorization: Bearer YOUR_SUPABASE_ANON_KEY" \
+  -d '{"ilan_id": 123}'
 
-# GPS tracking çek (test)
-curl -X POST https://iawqwfbvbigtbvipddao.supabase.co/functions/v1/get-tracking \
+# GPS tracking testi
+curl -X POST https://your-kargomarketing-supabase.supabase.co/functions/v1/get-gps-tracking \
   -H "Content-Type: application/json" \
-  -d '{
-    "api_key": "test_api_key_123",
-    "ilan_no": "TEST_001"
-  }'
+  -H "Authorization: Bearer YOUR_SUPABASE_ANON_KEY" \
+  -d '{"ilan_no": "KRG2025001"}'
+```
+
+### kargomarketing.com yapılacaklar listesi
+
+1. ✅ **Edge Functions oluştur**: create-gps-job.ts, get-gps-tracking.ts, webhook-handler.ts
+2. ✅ **Database güncellemesi**: GPS kolonları ekle
+3. ⏳ **Frontend widget**: React GPS tracking komponenti
+4. ⏳ **Webhook endpoint**: GPS güncellemelerini dinle
+5. ⏳ **Test**: API entegrasyonu test et
+
+### Test sürecindekiler
+
+```typescript
+// Test için Supabase Edge Function
+const testGPSIntegration = async () => {
+  const { data } = await supabase.functions.invoke('create-gps-job', {
+    body: { ilan_id: 1 }
+  })
+  console.log('GPS Job Result:', data)
+}
+```
+
+### Environment Variables (.env)
+
+```bash
+# kargomarketing.com Supabase Edge Functions environment
+KARGOMARKETING_SUPABASE_URL=https://your-kargomarketing-project.supabase.co
+KARGOMARKETING_SERVICE_KEY=your_service_role_key
+GPS_API_KEY=production_api_key_12345
+
+# React Frontend environment
+REACT_APP_KARGOMARKETING_SUPABASE_URL=https://your-kargomarketing-project.supabase.co
+REACT_APP_KARGOMARKETING_ANON_KEY=your_anon_key
 ```
 
 ---
 
-## 🎯 Implementation Checklist
+**🎯 Bu dosya kargomarketing.com AI'ına GPS sistemi entegrasyonu için gerekli tüm kodu sağlar. Her örnek doğrudan kullanıma hazır Supabase Edge Function formatındadır.**
 
-### kargomarketing.com'da yapılacaklar:
-
-- [ ] **Database migration** çalıştır (GPS kolonları)
-- [ ] **GPSController** class'ını oluştur  
-- [ ] **Webhook endpoints** ekle (/webhook/gps/*)
-- [ ] **API routes** tanımla (/api/gps/*)
-- [ ] **Environment variables** ayarla (GPS_API_KEY)
-- [ ] **Frontend GPS widget** ekle (JavaScript)
-- [ ] **Email templates** oluştur
-- [ ] **Test senaryoları** çalıştır
-
-### Test sürecindekiler:
-```
-1. İlan oluştur → Onayla → GPS görev oluştur ✅
-2. Canlı tracking test et ✅ 
-3. Webhook delivery test et ✅
-4. Email bildirimleri test et ✅
-```
-
----
-
-**Bu dökümanla kargomarketing.com yapay zekası GPS sistemini sorunsuz entegre edebilir. Tüm kod örnekleri production-ready durumdadır.**
+**CRITICAL**: kargomarketing.com da Supabase kullandığı için PHP/Laravel yerine TypeScript Edge Functions kullanmalıdır.
