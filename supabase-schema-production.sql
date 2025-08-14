@@ -64,8 +64,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   -- Araç bilgileri
   plaka VARCHAR(10),
   
-  -- Eşleştirme için kritik alan
-  tc_kimlik VARCHAR(11) UNIQUE NOT NULL,
+  -- Eşleştirme için kritik alan (kayıt anında opsiyonel)
+  tc_kimlik VARCHAR(11),
   
   -- Durum bilgisi
   aktif BOOLEAN DEFAULT TRUE,
@@ -153,6 +153,12 @@ CREATE INDEX IF NOT EXISTS idx_profiles_tc_kimlik ON public.profiles(tc_kimlik);
 CREATE INDEX IF NOT EXISTS idx_profiles_aktif ON public.profiles(aktif);
 CREATE INDEX IF NOT EXISTS idx_profiles_tam_ad ON public.profiles(tam_ad);
 
+-- Tekillik: sadece NULL olmayan tc_kimlik değerlerinde uygula
+DROP INDEX IF EXISTS profiles_tc_kimlik_key;
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_tc_kimlik_unique_not_null
+  ON public.profiles (tc_kimlik)
+  WHERE tc_kimlik IS NOT NULL;
+
 -- GPS kayıtları indexleri
 CREATE INDEX IF NOT EXISTS idx_gps_kayitlari_gorev_id ON public.gps_kayitlari(gorev_id);
 CREATE INDEX IF NOT EXISTS idx_gps_kayitlari_sofor_id ON public.gps_kayitlari(sofor_id);
@@ -170,8 +176,9 @@ CREATE INDEX IF NOT EXISTS idx_admin_logs_resolved ON public.admin_logs(resolved
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, ad, soyad, tc_kimlik, aktif)
-  VALUES (NEW.id, 'Yeni', 'Şoför', '00000000000', false);
+  -- Not: tc_kimlik başlangıçta NULL bırakılır; gerçek TC daha sonra güncellenir.
+  INSERT INTO public.profiles (id, ad, soyad, aktif)
+  VALUES (NEW.id, 'Yeni', 'Şoför', false);
   -- Yeni şoförler başlangıçta pasif, admin onayı sonrası aktif
   RETURN NEW;
 END;

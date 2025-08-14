@@ -43,6 +43,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [gpsActive, setGpsActive] = useState(false);
+  const [trackingInterval, setTrackingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [lastLocation, setLastLocation] = useState<{lat: number, lon: number} | null>(null);
   const [isLogin, setIsLogin] = useState(true); // Login/Register toggle
 
   useEffect(() => {
@@ -56,6 +59,15 @@ export default function App() {
       listener?.subscription.unsubscribe();
     };
   }, []);
+
+  // Cleanup tracking interval on unmount
+  useEffect(() => {
+    return () => {
+      if (trackingInterval) {
+        clearInterval(trackingInterval);
+      }
+    };
+  }, [trackingInterval]);
 
   useEffect(() => {
     if (session) {
@@ -109,38 +121,161 @@ export default function App() {
     }
   };
 
-  const sendGps = async (gorevId: number) => {
-    setGpsActive(true);
+  // GPS Tracking Functions
+  const startGpsTracking = async (gorevId: number) => {
     try {
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Konum izni reddedildi');
-        setGpsActive(false);
         return;
       }
-      const location = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude, speed, accuracy, heading } = location.coords;
-      await supabase
-        .from('gps_kayitlari')
-        .insert({
-          gorev_id: gorevId,
-          sofor_id: session?.user?.id,
-          konum_verisi: {
-            lat: latitude,
-            lon: longitude,
-            speed,
-            accuracy,
-            bearing: heading,
-            ts: new Date().toISOString(),
-          },
-          timestamp: new Date().toISOString(),
-        });
-      Alert.alert('GPS verisi gönderildi');
+
+      setGpsActive(true);
+      setActiveTaskId(gorevId.toString());
+
+      // İlk GPS verisini gönder ve görevi başlat
+      await sendSingleGps(gorevId, true);
+
+      // 15 saniyede bir GPS verisi gönder (akıllı filtreleme ile)
+      const interval = setInterval(async () => {
+        try {
+          await sendSingleGps(gorevId, false);
+        } catch (e) {
+          console.error('GPS tracking error:', e);
+        }
+      }, 15000); // 3 saniye → 15 saniye
+
+      setTrackingInterval(interval);
+      Alert.alert('Sefer başladı', 'Akıllı GPS takibi aktif - sadece hareket halinde konum gönderir');
     } catch (e: any) {
-      setError(e?.message || 'GPS gönderilemedi');
-      Alert.alert('GPS gönderilemedi', e?.message || '');
-    } finally {
+      console.error('GPS tracking start error:', e);
+      Alert.alert('Hata', e?.message || 'GPS takibi başlatılamadı');
       setGpsActive(false);
+    }
+  };
+
+  const stopGpsTracking = async () => {
+    if (trackingInterval) {
+      clearInterval(trackingInterval);
+      setTrackingInterval(null);
+    }
+
+    if (activeTaskId) {
+      try {
+        // Görevi tamamla
+        const { error: updateError } = await supabase
+          .from('gorevler')
+          .update({ 
+            sefer_durumu: 'tamamlandi',
+            bitis_zamani: new Date().toISOString()
+          })
+          .eq('id', parseInt(activeTaskId))
+          .eq('sofor_id', session?.user?.id);
+
+        if (updateError) {
+          console.error('Task completion error:', updateError);
+        }
+      } catch (e) {
+        console.error('Stop tracking error:', e);
+      }
+    }
+
+    setGpsActive(false);
+    setActiveTaskId(null);
+    Alert.alert('Sefer tamamlandı', 'GPS takibi durduruldu');
+    fetchTasks(); // Görevleri yenile
+  };
+
+  const sendSingleGps = async (gorevId: number, isFirstGps: boolean = false) => {
+    const location = await Location.getCurrentPositionAsync({});
+    const { latitude, longitude, speed, accuracy, heading } = location.coords;
+    
+    // Akıllı filtreleme: Sadece hareket halinde ve anlamlı değişiklik varsa kaydet
+    const currentLocation = { lat: latitude, lon: longitude };
+    const minDistance = 10; // 10 meter minimum hareket
+    const minSpeed = 1; // 1 km/h minimum hız
+    
+    if (!isFirstGps && lastLocation) {
+      const distance = calculateDistance(lastLocation, currentLocation);
+      const currentSpeed = (speed || 0) * 3.6; // m/s to km/h
+      
+      // Hareket etmiyorsa ve yavaşsa kaydetme
+      if (distance < minDistance && currentSpeed < minSpeed) {
+        console.log('GPS skipped: No significant movement', { distance, speed: currentSpeed });
+        return;
+      }
+    }
+    
+    // GPS kayıtları tablosuna veri ekle
+    const { error: gpsError } = await supabase
+      .from('gps_kayitlari')
+      .insert({
+        gorev_id: gorevId,
+        sofor_id: session?.user?.id,
+        latitude: latitude,
+        longitude: longitude,
+        hiz: speed || 0,
+        yon: heading || 0,
+        dogruluk: accuracy || 0,
+        konum_verisi: {
+          lat: latitude,
+          lon: longitude,
+          speed,
+          accuracy,
+          bearing: heading,
+          ts: new Date().toISOString(),
+        },
+        timestamp: new Date().toISOString(),
+      });
+
+    if (gpsError) {
+      throw gpsError;
+    }
+
+    // Son konumu güncelle
+    setLastLocation(currentLocation);
+
+    // İlk GPS'te görevi "seferde" durumuna getir
+    if (isFirstGps) {
+      const { error: updateError } = await supabase
+        .from('gorevler')
+        .update({ 
+          sefer_durumu: 'seferde',
+          kabul_edildi_mi: true,
+          baslangic_zamani: new Date().toISOString()
+        })
+        .eq('id', gorevId)
+        .eq('sofor_id', session?.user?.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+    }
+
+    console.log('GPS sent:', { lat: latitude, lon: longitude, speed });
+  };
+
+  // Mesafe hesaplama (Haversine formula)
+  const calculateDistance = (pos1: {lat: number, lon: number}, pos2: {lat: number, lon: number}) => {
+    const R = 6371e3; // Earth radius in meters
+    const φ1 = pos1.lat * Math.PI/180;
+    const φ2 = pos2.lat * Math.PI/180;
+    const Δφ = (pos2.lat-pos1.lat) * Math.PI/180;
+    const Δλ = (pos2.lon-pos1.lon) * Math.PI/180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c; // Distance in meters
+  };
+
+  const sendGps = async (gorevId: number) => {
+    if (gpsActive && activeTaskId === gorevId.toString()) {
+      stopGpsTracking();
+    } else {
+      startGpsTracking(gorevId);
     }
   };
 
@@ -288,12 +423,17 @@ export default function App() {
               </View>
               
               <TouchableOpacity
-                style={[styles.gpsButton, gpsActive && styles.gpsButtonActive]}
+                style={[
+                  styles.gpsButton, 
+                  (gpsActive && activeTaskId === item.id.toString()) && styles.gpsButtonActive
+                ]}
                 onPress={() => sendGps(item.id)}
-                disabled={gpsActive}
               >
                 <Text style={styles.gpsButtonText}>
-                  {gpsActive ? "📡 GPS Gönderiliyor..." : "📍 GPS Gönder"}
+                  {(gpsActive && activeTaskId === item.id.toString()) 
+                    ? "� Seferi Bitir" 
+                    : "� Sefere Başla"
+                  }
                 </Text>
               </TouchableOpacity>
             </View>

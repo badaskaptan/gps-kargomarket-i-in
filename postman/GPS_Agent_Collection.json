@@ -1,0 +1,83 @@
+{
+  "info": {
+    "name": "KargoMarket GPS Agent",
+    "description": "Postman koleksiyonu: RLS uyumlu RPC çağrıları ve sürücü GPS örnek isteği",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://iawqwfbvbigtbvipddao.supabase.co", "type": "string" },
+    { "key": "anonKey", "value": "", "type": "string" },
+    { "key": "apiKey", "value": "NERELİYİMSALUR", "type": "string" },
+    { "key": "driverJwt", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "km_list_gorevler (RPC)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "apikey", "value": "{{anonKey}}" },
+          { "key": "Authorization", "value": "Bearer {{anonKey}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/rest/v1/rpc/km_list_gorevler"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{apiKey}}\"\n}"
+        }
+      }
+    },
+    {
+      "name": "km_insert_gorev (RPC)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "apikey", "value": "{{anonKey}}" },
+          { "key": "Authorization", "value": "Bearer {{anonKey}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/rest/v1/rpc/km_insert_gorev"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{apiKey}}\",\n  \"p_ilan_no\": \"ILN-2025-0001\",\n  \"p_tc_kimlik\": \"00000000000\",\n  \"p_sofor_adi\": \"Ad Soyad\",\n  \"p_teslimat_adresi\": \"Adres satiri\",\n  \"p_musteri_bilgisi\": \"Opsiyonel\",\n  \"p_baslangic_adresi\": \"Opsiyonel\",\n  \"p_ilan_aciklama\": \"Opsiyonel\"\n}"
+        }
+      }
+    },
+    {
+      "name": "driver_insert_gps_kayit (Direct Table)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('RLS veya Insert hatasi degil', function () {",
+              "  pm.response.to.have.status(201);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "apikey", "value": "{{anonKey}}" },
+          { "key": "Authorization", "value": "Bearer {{driverJwt}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Prefer", "value": "return=representation" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/rest/v1/gps_kayitlari"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"gorev_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"sofor_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"latitude\": 41.0,\n  \"longitude\": 29.0,\n  \"hiz\": 50,\n  \"yon\": 180,\n  \"dogruluk\": 5\n}"
+        }
+      }
+    }
+  ]
+}

@@ -217,11 +217,166 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, ad, soyad, tc_kimlik, aktif)
-  VALUES (NEW.id, 'Yeni', 'Şoför', '00000000000', false);
+  -- Not: tc_kimlik başlangıçta NULL bırakılır; gerçek TC daha sonra güncellenir.
+  INSERT INTO public.profiles (id, ad, soyad, aktif)
+  VALUES (NEW.id, 'Yeni', 'Şoför', false);
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+### KM RPC'LERİ (Supabase 2 / GPS DB)
+
+Aşağıdaki yapı, KargoMarketing (Pazaryeri) tarafının GPS DB'ye yalnızca RLS-uyumlu RPC üzerinden erişmesini sağlar. Gizli anahtar `public.app_config` tablosunda saklanır ve RPC içinde doğrulanır.
+
+```sql
+-- 1) Uygulama Konfig Tablosu (API anahtarını saklamak için)
+CREATE TABLE IF NOT EXISTS public.app_config (
+  key   text PRIMARY KEY,
+  value text NOT NULL
+);
+
+-- Örnek değer (üretimde değiştirin)
+INSERT INTO public.app_config (key, value)
+VALUES ('km_api_key', 'NERELİYİMSALUR')
+ON CONFLICT (key) DO NOTHING;
+
+-- 2) API Anahtarı Doğrulama Yardımcı Fonksiyonu
+CREATE OR REPLACE FUNCTION public.authenticate_kargomarketing_api(
+  api_key text
+)
+RETURNS boolean AS $$
+DECLARE
+  stored_key text;
+BEGIN
+  SELECT value INTO stored_key FROM public.app_config WHERE key = 'km_api_key';
+  IF stored_key IS NULL THEN
+    RAISE EXCEPTION 'km_api_key not configured in app_config';
+  END IF;
+
+  IF api_key = stored_key THEN
+    PERFORM set_config('app.user_role', 'kargomarketing_api', true);
+    RETURN true;
+  END IF;
+
+  RETURN false;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 3) RLS-uyumlu INSERT RPC: km_insert_gorev
+CREATE OR REPLACE FUNCTION public.km_insert_gorev(
+  api_key              text,
+  p_ilan_no            varchar(50),
+  p_tc_kimlik          varchar(11),
+  p_sofor_adi          varchar(100),
+  p_teslimat_adresi    text,
+  p_musteri_bilgisi    text DEFAULT NULL,
+  p_baslangic_adresi   text DEFAULT NULL,
+  p_ilan_aciklama      text DEFAULT NULL
+)
+RETURNS public.gorevler AS $$
+DECLARE
+  ok boolean;
+  row public.gorevler;
+BEGIN
+  ok := public.authenticate_kargomarketing_api(api_key);
+  IF NOT ok THEN
+    RAISE EXCEPTION 'Unauthorized';
+  END IF;
+
+  INSERT INTO public.gorevler (
+    ilan_no, tc_kimlik, sofor_adi, teslimat_adresi,
+    musteri_bilgisi, baslangic_adresi, ilan_aciklama
+  ) VALUES (
+    p_ilan_no, p_tc_kimlik, p_sofor_adi, p_teslimat_adresi,
+    p_musteri_bilgisi, p_baslangic_adresi, p_ilan_aciklama
+  ) RETURNING * INTO row;
+
+  RETURN row;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 4) RLS-uyumlu SELECT RPC: km_list_gorevler
+CREATE OR REPLACE FUNCTION public.km_list_gorevler(
+  api_key text
+)
+RETURNS SETOF public.gorevler AS $$
+DECLARE
+  ok boolean;
+BEGIN
+  ok := public.authenticate_kargomarketing_api(api_key);
+  IF NOT ok THEN
+    RAISE EXCEPTION 'Unauthorized';
+  END IF;
+
+  RETURN QUERY
+  SELECT * FROM public.gorevler;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 5) İlgili RLS Politikaları (özet/örnek)
+-- gorevler: API için tam yetki, sürücü kendi görevlerini görebilir
+ALTER TABLE public.gorevler ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "API full access to tasks" ON public.gorevler;
+CREATE POLICY "API full access to tasks"
+ON public.gorevler FOR ALL
+USING (
+  current_setting('app.user_role', true) = 'kargomarketing_api'
+)
+WITH CHECK (
+  current_setting('app.user_role', true) = 'kargomarketing_api'
+);
+
+DROP POLICY IF EXISTS "Drivers see assigned tasks" ON public.gorevler;
+CREATE POLICY "Drivers see assigned tasks"
+ON public.gorevler FOR SELECT
+USING (sofor_id = auth.uid());
+
+-- gps_kayitlari: sürücü sadece kendi kaydını yazsın/görsün ve gorev_id ilişkisi doğrulansın
+ALTER TABLE public.gps_kayitlari ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Drivers see own GPS data" ON public.gps_kayitlari;
+CREATE POLICY "Drivers see own GPS data"
+ON public.gps_kayitlari FOR SELECT
+USING (
+  sofor_id = auth.uid() AND (
+    gorev_id IS NULL OR EXISTS (
+      SELECT 1 FROM public.gorevler g
+      WHERE g.id = gorev_id AND g.sofor_id = auth.uid()
+    )
+  )
+);
+
+DROP POLICY IF EXISTS "Drivers insert own GPS data" ON public.gps_kayitlari;
+CREATE POLICY "Drivers insert own GPS data"
+ON public.gps_kayitlari FOR INSERT
+WITH CHECK (
+  sofor_id = auth.uid() AND (
+    gorev_id IS NULL OR EXISTS (
+      SELECT 1 FROM public.gorevler g
+      WHERE g.id = gorev_id AND g.sofor_id = auth.uid()
+    )
+  )
+);
+```
+
+Notlar:
+- km_api_key değeri üretimde güncellenmeli ve periyodik olarak rotate edilmelidir.
+- RPC'ler SECURITY DEFINER olarak çalışır; RLS, `app.user_role` işaretine göre API erişimini verir.
+- `handle_new_user` fonksiyonu dummy TC yazmaz; `tc_kimlik` kullanıcı tarafından doğrulandıktan sonra güncellenir.
+
+#### TC KİMLİK KOLONU (Kayıt Hatasını Önleme)
+
+```sql
+-- 1) tc_kimlik NULL olabilir (kayıt anında zorunlu değil)
+ALTER TABLE public.profiles ALTER COLUMN tc_kimlik DROP NOT NULL;
+
+-- 2) Tekillik kuralını NULL hariç uygula (aynı NULL birden çok satırda olabilir)
+DROP INDEX IF EXISTS profiles_tc_kimlik_key;
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_tc_kimlik_unique_not_null
+  ON public.profiles (tc_kimlik)
+  WHERE tc_kimlik IS NOT NULL;
 ```
 
 ## 1. TC KIMLIK EŞLEŞTİRME FONKSİYONU

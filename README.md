@@ -101,3 +101,9 @@ gps-takip/
 **Status**: PRODUCTION READY ✅  
 **Version**: GPS Agent V2 (Optimized)  
 **Last Updated**: 2025-08-12
+
+## GPS Agent Entegrasyon Rehberi
+
+GPS ajanı (şoför uygulaması) için Supabase 2 (GPS DB) akışı, RLS kuralları ve RPC uçları:
+
+- Bkz: [GPS-AGENT-ENTEGRASYON-REHBERI.md](./GPS-AGENT-ENTEGRASYON-REHBERI.md)
