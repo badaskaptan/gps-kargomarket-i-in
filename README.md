@@ -1,55 +1,62 @@
-# gps-kargomarket-i-in
+# � GPS Takip Sistemi - Master Project
 
-## Proje Özeti
-Bu repo, sadeleştirilmiş GPS takip sistemi ve Supabase backend mimarisi içerir.
+Modern GPS tracking sistemi: React Native mobil app + Supabase backend
 
-### Klasörler
-- `gps-sefer`: Sadece GPS backend ile çalışan mobil uygulama
-- `supabase`: Supabase fonksiyonları ve backend
+## 📁 Proje Yapısı
 
-### Son Durum
-- GPS mobil uygulaması sadeleştirildi, sadece GPS backend ile çalışıyor
-- Kargomarketing ve Bridge API kodları kaldırıldı
-
-### Kullanım
-1. Mobil uygulamayı başlatın
-2. Şoför girişi veya kayıt olun
-3. Atanmış görevleri görüntüleyin
-4. Her görev için GPS konumunuzu gönderin
-
-### Notlar
-- Tüm eski ve gereksiz kodlar kaldırıldı
-- Sadece sade GPS takip fonksiyonu vardır
-# 🚛 GPS Sefer Takip Sistemi
-
-React Native GPS tracking app with dual Supabase backend integration.
-
-## 🎯 Project Status: PRODUCTION READY
-
-**GPS Agent V2** - Optimized dual backend management system
-
-### ✅ Core Features
-- **Dual Backend Architecture**: GPS + Kargomarketing Supabase integration
-- **Smart Sync System**: Dynamic 5s-120s polling intervals  
-- **User-Independent Operation**: No login dependency for sync
-- **Case-Insensitive Driver Matching**: Fuzzy string algorithms
-- **Manual Text Input**: Free text driver assignment
-- **Real-Time Updates**: GPS → Kargomarketing sync
-- **Performance Optimized**: 60-80% network usage reduction
-
-### 🏗️ Architecture
 ```
-GPS Backend (iawqwfbvbigtbvipddao) ← Primary storage & mobile app
-     ↓ Real-time sync
-Kargomarketing Backend (rmqwrdeaecjyyalbnvbq) ← Display only
+gps-takip/
+├── gps-sefer/              # React Native mobil uygulama
+├── ACIL-KURULUM.md         # 4 komutla hızlı kurulum
+├── KURULUM-REHBERI.md      # Detaylı kurulum guide
+├── SUPABASE-FUNCTIONS.md   # Database function'ları
+├── SUPABASE-TRIGGERS.md    # Database trigger'ları
+├── SUPABASE-RLS-POLICIES.md # Güvenlik policy'leri
+├── SUPABASE-TABLES.md      # Database tabloları
+├── TABLO-GUNCELLEME.md     # Mevcut tablo güncelleme
+└── OZET.md                 # Hızlı özet
 ```
 
-### 🚀 Quick Start
+## ⚡ Hızlı Başlangıç
+
+### 1. Backend Kurulumu
+```bash
+# Mevcut sistem için 4 komutla kurulum
+cat ACIL-KURULUM.md
+```
+
+### 2. Mobil App Çalıştırma
 ```bash
 cd gps-sefer
 npm install
-npx expo start --web
+npx expo start
 ```
+
+## 🎯 Özellikler
+
+- ✅ TC kimlik ile otomatik şöför eşleştirme
+- ✅ Real-time GPS tracking  
+- ✅ Supabase backend integration
+- ✅ Row Level Security (RLS)
+- ✅ Push notification sistemi
+- ✅ Kargomarketing API entegrasyonu
+
+## 📱 Teknolojiler
+
+- **Frontend:** React Native/Expo
+- **Backend:** Supabase (PostgreSQL)
+- **Authentication:** Supabase Auth
+- **Real-time:** Supabase Realtime
+- **GPS:** Expo Location
+
+## 🚀 Üretim Hazır
+
+Sistem production ready durumda. Kurulum için:
+
+1. `ACIL-KURULUM.md` → Hızlı kurulum (4 komut)
+2. `KURULUM-REHBERI.md` → Detaylı kurulum
+
+**Not:** Markdown lint uyarılarını görmezden gel.
 
 ### 📊 Performance Metrics
 - **Response Time**: 50-70% improvement
