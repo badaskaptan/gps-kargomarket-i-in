@@ -1,3 +1,4 @@
+// ...existing code...
 // @ts-nocheck
 // 🌉 BRIDGE SYSTEM: Backend1 ↔ Backend2 Bağlantısı
 // GPS Backend'inde çalışan Edge Function
@@ -13,7 +14,6 @@ const KARGOMARKETING_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3M
 const kargomarketing = createClient(KARGOMARKETING_URL, KARGOMARKETING_SERVICE_KEY)
 
 serve(async (req: Request) => {
-  // CORS headers
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -21,7 +21,7 @@ serve(async (req: Request) => {
   }
 
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { status: 200, headers: corsHeaders });
   }
 
   try {
@@ -31,17 +31,17 @@ serve(async (req: Request) => {
     switch (endpoint) {
       case 'realtime-gps':
         return await handleRealtimeGPS(req, corsHeaders)
-      
+
       case 'driver-assigned':
         return await handleDriverAssigned(req, corsHeaders)
-      
+
       case 'sync-tasks':
         return await handleSyncTasks(req, corsHeaders)
-      
+
       default:
-        return new Response('Endpoint not found', { 
-          status: 404, 
-          headers: corsHeaders 
+        return new Response('Endpoint not found', {
+          status: 404,
+          headers: corsHeaders
         })
     }
   } catch (error: any) {
@@ -52,7 +52,7 @@ serve(async (req: Request) => {
   }
 })
 
-// 📡 Real-time GPS: Backend2 → Backend1 (Anlık, depolama yok)
+// 👨‍💼 Real-time GPS: Backend1'e anlık GPS gönder
 async function handleRealtimeGPS(req: Request, corsHeaders: any) {
   const { ilan_no, driver_id, location, timestamp, customer_info } = await req.json()
 
@@ -66,9 +66,9 @@ async function handleRealtimeGPS(req: Request, corsHeaders: any) {
     .eq('ilan_no', ilan_no)
     .eq('sofor_id', driver_id)
 
-  return new Response(JSON.stringify({ 
-    success: true, 
-    message: 'Real-time GPS sent to Backend1' 
+  return new Response(JSON.stringify({
+    success: true,
+    message: 'Real-time GPS sent to Backend1'
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
@@ -88,9 +88,9 @@ async function handleDriverAssigned(req: Request, corsHeaders: any) {
     })
     .eq('ilan_no', ilan_no)
 
-  return new Response(JSON.stringify({ 
-    success: true, 
-    message: 'Driver assignment synced to Backend1' 
+  return new Response(JSON.stringify({
+    success: true,
+    message: 'Driver assignment synced to Backend1'
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
@@ -105,15 +105,24 @@ async function handleSyncTasks(req: Request, corsHeaders: any) {
     .eq('sefer_durumu', 'atanmamis')
     .is('sofor_id', null)
 
-  // Backend2'ye kopyala
+  // GPS Backend bağlantısı
+  const GPS_URL = 'https://iawqwfbvbigtbvipddao.supabase.co';
+  const GPS_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlhd3F3ZmJ2YmlndGJ2aXBkZGFvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDkwNzM3OCwiZXhwIjoyMDcwNDgzMzc4fQ.M2fyRVoinM8RtYesSwWkrzQaPU72rCszTd-sSU2j4f4'; // Buraya kendi GPS backend service key'inizi girin
+  const gpsBackend = createClient(GPS_URL, GPS_SERVICE_KEY);
+
+  let inserted = 0;
   if (newTasks && newTasks.length > 0) {
-    // GPS Backend'ine görev ekleme işlemi buraya
-    // (Şu an için manuel ekliyoruz)
+    for (const task of newTasks) {
+      const { error } = await gpsBackend
+        .from('gorevler')
+        .insert([task]);
+      if (!error) inserted++;
+    }
   }
 
-  return new Response(JSON.stringify({ 
-    success: true, 
-    synced_tasks: newTasks?.length || 0 
+  return new Response(JSON.stringify({
+    success: true,
+    synced_tasks: inserted
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })

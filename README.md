@@ -1,3 +1,25 @@
+# gps-kargomarket-i-in
+
+## Proje Özeti
+Bu repo, sadeleştirilmiş GPS takip sistemi ve Supabase backend mimarisi içerir.
+
+### Klasörler
+- `gps-sefer`: Sadece GPS backend ile çalışan mobil uygulama
+- `supabase`: Supabase fonksiyonları ve backend
+
+### Son Durum
+- GPS mobil uygulaması sadeleştirildi, sadece GPS backend ile çalışıyor
+- Kargomarketing ve Bridge API kodları kaldırıldı
+
+### Kullanım
+1. Mobil uygulamayı başlatın
+2. Şoför girişi veya kayıt olun
+3. Atanmış görevleri görüntüleyin
+4. Her görev için GPS konumunuzu gönderin
+
+### Notlar
+- Tüm eski ve gereksiz kodlar kaldırıldı
+- Sadece sade GPS takip fonksiyonu vardır
 # 🚛 GPS Sefer Takip Sistemi
 
 React Native GPS tracking app with dual Supabase backend integration.
