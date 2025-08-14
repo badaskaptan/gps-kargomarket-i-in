@@ -72,7 +72,7 @@ if (!authResult) {
 
 ## 📝 İŞ EMRİ OLUŞTURMA (MODAL)
 
-### Frontend Modal Alanları
+### 🚛 TEK ARAÇ MODAL (Basit Kullanım)
 
 ```html
 <form id="is-emri-form">
@@ -88,6 +88,273 @@ if (!authResult) {
   <textarea name="ilan_aciklama" placeholder="Özel talepler, dikkat edilecekler"></textarea>
 </form>
 ```
+
+### 🚛🚛🚛 ÇOKLU ARAÇ MODAL (Gelişmiş Kullanım)
+
+**💡 Kullanım Senaryosu:** 1 ilan numarası için birden fazla araç atamak istiyorsunuz.
+
+```html
+<div id="multi-vehicle-modal" class="modal">
+  <div class="modal-content">
+    <h3>🚛 Çoklu Araç İş Emri Oluştur</h3>
+    
+    <!-- ANA İLAN BİLGİLERİ (ORTAK) -->
+    <div class="main-job-info">
+      <h4>📋 Ana İş Bilgileri</h4>
+      <input id="base-ilan-no" placeholder="Ana İlan No: NT220251405" required />
+      <textarea id="main-teslimat-adresi" placeholder="Teslimat Adresi (Tüm araçlar için ortak)" required></textarea>
+      <textarea id="main-musteri-bilgisi" placeholder="Müşteri Bilgileri (Ortak)"></textarea>
+      <textarea id="main-ilan-aciklama" placeholder="İş Açıklaması (Ortak)"></textarea>
+    </div>
+
+    <!-- ARAÇ LİSTESİ (DİNAMİK) -->
+    <div id="vehicles-container">
+      <!-- JavaScript ile dinamik oluşturulacak -->
+    </div>
+
+    <!-- KONTROL BUTONLARI -->
+    <div class="modal-actions">
+      <button type="button" onclick="addVehicle()" class="add-vehicle-btn">
+        ➕ Araç Ekle
+      </button>
+      <button type="button" onclick="submitAllJobs()" class="submit-all-btn">
+        ✅ Tüm İş Emirlerini Onayla (0 Araç)
+      </button>
+      <button type="button" onclick="closeModal()" class="cancel-btn">
+        ❌ İptal
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ARAÇ FORM ŞABLONu -->
+<template id="vehicle-form-template">
+  <div class="vehicle-form-card" data-vehicle-index="{index}">
+    <div class="vehicle-header">
+      <h4>🚛 Araç {index}</h4>
+      <span class="auto-ilan-no">{autoIlanNo}</span>
+      <button type="button" onclick="removeVehicle({index})" class="remove-btn">❌</button>
+    </div>
+    
+    <div class="vehicle-fields">
+      <input 
+        name="vehicle-tc-{index}" 
+        placeholder="Şoför TC Kimlik: 12345678901" 
+        maxlength="11" 
+        required 
+      />
+      <input 
+        name="vehicle-name-{index}" 
+        placeholder="Şoför Adı: Ali Veli" 
+        required 
+      />
+      <input 
+        name="vehicle-start-address-{index}" 
+        placeholder="Bu araç için başlangıç adresi (opsiyonel)" 
+      />
+      <textarea 
+        name="vehicle-notes-{index}" 
+        placeholder="Bu araç için özel notlar (opsiyonel)"
+      ></textarea>
+    </div>
+  </div>
+</template>
+```
+
+### 🔧 ÇOKLU ARAÇ JAVASCRIPT LOGIC
+
+```javascript
+// ÇOKLU ARAÇ MODAL KONTROL SİSTEMİ
+class MultiVehicleJobManager {
+  constructor() {
+    this.vehicles = [];
+    this.baseIlanNo = '';
+    this.mainJobData = {};
+  }
+
+  // Yeni araç ekle
+  addVehicle() {
+    const index = this.vehicles.length + 1;
+    const suffix = String.fromCharCode(64 + index); // A, B, C, D...
+    
+    // Base ilan no güncelle
+    this.baseIlanNo = document.getElementById('base-ilan-no').value || 'NT220251405';
+    const autoIlanNo = `${this.baseIlanNo}-${suffix}`;
+    
+    const vehicle = {
+      index: index,
+      ilan_no: autoIlanNo,
+      tc_kimlik: '',
+      sofor_adi: '',
+      baslangic_adresi: '',
+      vehicle_notes: ''
+    };
+    
+    this.vehicles.push(vehicle);
+    this.renderVehicleForm(vehicle);
+    this.updateSubmitButton();
+  }
+
+  // Araç formu oluştur
+  renderVehicleForm(vehicle) {
+    const container = document.getElementById('vehicles-container');
+    const template = document.getElementById('vehicle-form-template');
+    const clone = template.content.cloneNode(true);
+    
+    // Template değişkenlerini değiştir
+    clone.innerHTML = clone.innerHTML
+      .replace(/{index}/g, vehicle.index)
+      .replace(/{autoIlanNo}/g, vehicle.ilan_no);
+    
+    container.appendChild(clone);
+  }
+
+  // Araç kaldır
+  removeVehicle(index) {
+    this.vehicles = this.vehicles.filter(v => v.index !== index);
+    document.querySelector(`[data-vehicle-index="${index}"]`).remove();
+    this.updateSubmitButton();
+  }
+
+  // Ana iş verilerini topla
+  collectMainJobData() {
+    this.baseIlanNo = document.getElementById('base-ilan-no').value;
+    this.mainJobData = {
+      teslimat_adresi: document.getElementById('main-teslimat-adresi').value,
+      musteri_bilgisi: document.getElementById('main-musteri-bilgisi').value,
+      ilan_aciklama: document.getElementById('main-ilan-aciklama').value
+    };
+  }
+
+  // Araç verilerini topla ve birleştir
+  collectVehicleData() {
+    return this.vehicles.map(vehicle => {
+      const vehicleNotes = document.querySelector(`[name="vehicle-notes-${vehicle.index}"]`).value;
+      const startAddress = document.querySelector(`[name="vehicle-start-address-${vehicle.index}"]`).value;
+      
+      return {
+        ilan_no: vehicle.ilan_no,
+        tc_kimlik: document.querySelector(`[name="vehicle-tc-${vehicle.index}"]`).value,
+        sofor_adi: document.querySelector(`[name="vehicle-name-${vehicle.index}"]`).value,
+        baslangic_adresi: startAddress || null,
+        // Ana job verilerini ekle
+        ...this.mainJobData,
+        // Araç özel notlarını ana açıklamaya ekle
+        ilan_aciklama: vehicleNotes ? 
+          `${this.mainJobData.ilan_aciklama || ''}\n[Araç ${vehicle.index} Notu: ${vehicleNotes}]` : 
+          this.mainJobData.ilan_aciklama
+      };
+    });
+  }
+
+  // Tüm iş emirlerini gönder
+  async submitAllJobs() {
+    try {
+      if (this.vehicles.length === 0) {
+        alert('❌ En az 1 araç eklemelisiniz!');
+        return;
+      }
+
+      this.collectMainJobData();
+      const vehicleData = this.collectVehicleData();
+      
+      // Validation
+      for (const vehicle of vehicleData) {
+        if (!vehicle.ilan_no || !vehicle.tc_kimlik || !vehicle.sofor_adi || !vehicle.teslimat_adresi) {
+          alert('❌ Tüm zorunlu alanları doldurunuz!');
+          return;
+        }
+      }
+      
+      // Her araç için ayrı API çağrısı (AYNI ENDPOINT!)
+      const results = [];
+      for (const vehicle of vehicleData) {
+        const result = await createJobOrder(vehicle); // Mevcut API fonksiyonu
+        results.push(result);
+      }
+      
+      alert(`✅ ${results.length} iş emri başarıyla oluşturuldu!\n\nOluşturulan İlan Numaraları:\n${results.map(r => r.ilan_no).join('\n')}`);
+      this.closeModal();
+      
+    } catch (error) {
+      alert(`❌ Hata: ${error.message}`);
+      console.error('Multi-vehicle job creation error:', error);
+    }
+  }
+
+  // Submit butonu güncelle
+  updateSubmitButton() {
+    const button = document.querySelector('.submit-all-btn');
+    button.textContent = `✅ Tüm İş Emirlerini Onayla (${this.vehicles.length} Araç)`;
+    button.disabled = this.vehicles.length === 0;
+  }
+
+  // Modal kapat ve temizle
+  closeModal() {
+    document.getElementById('multi-vehicle-modal').style.display = 'none';
+    this.vehicles = [];
+    document.getElementById('vehicles-container').innerHTML = '';
+    document.getElementById('base-ilan-no').value = '';
+    document.getElementById('main-teslimat-adresi').value = '';
+    document.getElementById('main-musteri-bilgisi').value = '';
+    document.getElementById('main-ilan-aciklama').value = '';
+  }
+}
+
+// Global instance
+const multiVehicleManager = new MultiVehicleJobManager();
+
+// Helper functions
+function addVehicle() {
+  multiVehicleManager.addVehicle();
+}
+
+function removeVehicle(index) {
+  multiVehicleManager.removeVehicle(index);
+}
+
+function submitAllJobs() {
+  multiVehicleManager.submitAllJobs();
+}
+
+function closeModal() {
+  multiVehicleManager.closeModal();
+}
+
+// Modal açma fonksiyonları
+function openSingleVehicleModal() {
+  document.getElementById('single-vehicle-modal').style.display = 'block';
+}
+
+function openMultiVehicleModal() {
+  document.getElementById('multi-vehicle-modal').style.display = 'block';
+  multiVehicleManager.addVehicle(); // İlk araç otomatik eklenir
+}
+```
+
+### 🎯 KULLANIM ÖRNEĞİ
+
+**Senaryo:** NT220251405 numaralı iş için 3 araç atamak istiyorsunuz.
+
+1. **Multi-Vehicle Modal Aç**
+2. **Ana Bilgileri Gir:**
+   - İlan No: `NT220251405`
+   - Teslimat Adresi: `İstanbul Atatürk Havalimanı`
+   - Müşteri: `ABC Lojistik`
+
+3. **Araçları Ekle:**
+   - ➕ Araç Ekle → `NT220251405-A` (Şoför: Ali Veli)
+   - ➕ Araç Ekle → `NT220251405-B` (Şoför: Mehmet Can) 
+   - ➕ Araç Ekle → `NT220251405-C` (Şoför: Hasan Demir)
+
+4. **Tek Tıkla Gönder:** ✅ Tüm İş Emirlerini Onayla (3 Araç)
+
+### ✅ BACKEND DEĞİŞİKLİĞİ: SIFIR!
+
+- **Aynı API endpoint** kullanılır: `createJobOrder()`
+- **Aynı veri formatı** gönderilir
+- **Sadece 3 kez çağrılır** (döngü ile)
+- **Hiçbir backend değişikliği** gerekmez!
 
 ### JavaScript API Çağrısı
 
