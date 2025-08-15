@@ -1,12 +1,12 @@
 import 'react-native-url-polyfill/auto';
 import 'react-native-get-random-values';
 import React, { useEffect, useState } from 'react';
-import { 
-  SafeAreaView, 
-  Text, 
-  Button, 
-  Alert, 
-  ActivityIndicator, 
+import {
+  SafeAreaView,
+  Text,
+  Button,
+  Alert,
+  ActivityIndicator,
   FlatList, 
   View, 
   TextInput, 
@@ -15,9 +15,11 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
-  ScrollView
+  ScrollView,
+  Animated
 } from 'react-native';
 import * as Location from 'expo-location';
+import { LinearGradient } from 'expo-linear-gradient';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -49,6 +51,21 @@ export default function App() {
   const [destinationCoords, setDestinationCoords] = useState<{lat: number, lon: number} | null>(null);
   const [currentTask, setCurrentTask] = useState<any>(null);
   const [isLogin, setIsLogin] = useState(true); // Login/Register toggle
+  const [rainbowAnim] = useState(new Animated.Value(0));
+
+  // Rainbow animation
+  useEffect(() => {
+    const startRainbowAnimation = () => {
+      Animated.loop(
+        Animated.timing(rainbowAnim, {
+          toValue: 1,
+          duration: 3000,
+          useNativeDriver: false,
+        })
+      ).start();
+    };
+    startRainbowAnimation();
+  }, []);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -430,11 +447,28 @@ export default function App() {
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.logoContainer}>
+              <View style={styles.brandingTopContainer}>
+                <Animated.View 
+                  style={[
+                    styles.kmLogoRainbow,
+                    {
+                      backgroundColor: rainbowAnim.interpolate({
+                        inputRange: [0, 0.16, 0.33, 0.5, 0.66, 0.83, 1],
+                        outputRange: ['#ff6b6b', '#feca57', '#48dbfb', '#0abde3', '#1dd1a1', '#5f27cd', '#ff9ff3']
+                      })
+                    }
+                  ]}
+                >
+                  <Text style={styles.kmLogoText}>KM</Text>
+                </Animated.View>
+                <Text style={styles.brandingTop}>KargoMarketing.com için tasarlanmıştır</Text>
+              </View>
               <View style={styles.logo}>
                 <Text style={styles.logoText}>📍</Text>
               </View>
               <Text style={styles.title}>GPS Sefer Takip</Text>
               <Text style={styles.subtitle}>Şoför Girişi</Text>
+              <Text style={styles.brandingBottom}>Powered by KargoMarketing.com</Text>
             </View>
           </View>
 
@@ -532,7 +566,25 @@ export default function App() {
     <SafeAreaView style={styles.dashboard}>
       {/* Header */}
       <View style={styles.dashboardHeader}>
-        <Text style={styles.welcomeText}>Hoşgeldiniz 👋</Text>
+        <View style={styles.dashboardHeaderContent}>
+          <View style={styles.dashboardBrandingContainer}>
+            <Animated.View 
+              style={[
+                styles.dashboardKmLogoRainbow,
+                {
+                  backgroundColor: rainbowAnim.interpolate({
+                    inputRange: [0, 0.16, 0.33, 0.5, 0.66, 0.83, 1],
+                    outputRange: ['#ff6b6b', '#feca57', '#48dbfb', '#0abde3', '#1dd1a1', '#5f27cd', '#ff9ff3']
+                  })
+                }
+              ]}
+            >
+              <Text style={styles.dashboardKmLogoText}>KM</Text>
+            </Animated.View>
+            <Text style={styles.dashboardBranding}>KargoMarketing.com GPS Takip Sistemi</Text>
+          </View>
+          <Text style={styles.welcomeText}>Hoşgeldiniz 👋</Text>
+        </View>
         <TouchableOpacity 
           style={styles.logoutButton}
           onPress={signOut}
@@ -609,6 +661,12 @@ export default function App() {
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
+        
+        {/* Footer Branding */}
+        <View style={styles.footerBranding}>
+          <Text style={styles.footerText}>© 2025 KargoMarketing.com</Text>
+          <Text style={styles.footerSubText}>Tüm hakları saklıdır</Text>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -624,14 +682,18 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     minHeight: height,
+    paddingHorizontal: 10, // Yan kenar boşlukları
   },
   header: {
     alignItems: 'center',
-    paddingTop: height * 0.1,
-    paddingBottom: 40,
+    paddingTop: height * 0.08, // Daha kompakt için %8'e düşürdük
+    paddingBottom: 30,
+    paddingHorizontal: 20, // Yan padding ekledik
   },
   logoContainer: {
     alignItems: 'center',
+    width: '100%', // Full width for mobile
+    maxWidth: 400, // Maximum width for larger screens
   },
   logo: {
     width: 80,
@@ -661,6 +723,54 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748b',
     fontWeight: '500',
+  },
+  brandingTopContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 15,
+    flexWrap: 'nowrap', // Yan yana kalması için
+    width: '100%',
+  },
+  kmLogoRainbow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 10, // Biraz daha boşluk
+    justifyContent: 'center',
+    alignItems: 'center',
+    // Animated background color will override this
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  kmLogoText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+  brandingTop: {
+    fontSize: 16,
+    color: '#4b5563',
+    fontWeight: '600',
+    textAlign: 'left', // Sol hizalama
+    fontStyle: 'italic',
+    flexShrink: 1, // Yazı uzunluğuna göre küçülsün
+  },
+  brandingBottom: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 12,
+    opacity: 0.8,
   },
   authModal: {
     marginHorizontal: 20,
@@ -775,6 +885,46 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingBottom: 20,
     paddingHorizontal: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dashboardHeaderContent: {
+    flex: 1,
+  },
+  dashboardBrandingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  dashboardKmLogoRainbow: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginRight: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // Animated background color will override
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  dashboardKmLogoText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 1,
+  },
+  dashboardBranding: {
+    fontSize: 14,
+    color: '#e0e7ff',
+    fontWeight: '600',
+    opacity: 0.95,
   },
   welcomeText: {
     color: '#ffffff',
@@ -889,6 +1039,25 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginBottom: 4,
     opacity: 0.9,
+  },
+  footerBranding: {
+    backgroundColor: '#f1f5f9',
+    padding: 16,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    marginTop: 20,
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  footerSubText: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontWeight: '400',
   },
 });
 
