@@ -46,12 +46,23 @@ export default function App() {
   const [trackingInterval, setTrackingInterval] = useState<NodeJS.Timeout | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [lastLocation, setLastLocation] = useState<{lat: number, lon: number} | null>(null);
+  const [destinationCoords, setDestinationCoords] = useState<{lat: number, lon: number} | null>(null);
+  const [currentTask, setCurrentTask] = useState<any>(null);
   const [isLogin, setIsLogin] = useState(true); // Login/Register toggle
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    const initializeApp = async () => {
+      const { data } = await supabase.auth.getSession();
       setSession(data.session);
-    });
+      
+      // Aktif sefer kontrolü - kesintisiz çalışma
+      if (data.session) {
+        await checkActiveTrip();
+      }
+    };
+    
+    initializeApp();
+    
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -75,18 +86,114 @@ export default function App() {
     }
   }, [session]);
 
+  // Aktif sefer kontrolü - kesintisiz çalışma
+  const checkActiveTrip = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('gorevler')
+        .select('*')
+        .eq('sofor_id', session?.user?.id)
+        .eq('sefer_durumu', 'aktif')
+        .single();
+      
+      if (data && !error) {
+        console.log('Active trip found, resuming GPS tracking:', data.id);
+        setCurrentTask(data);
+        setActiveTaskId(data.id.toString());
+        setGpsActive(true);
+        
+        // Hedef koordinatlarını varsa ayarla
+        if (data.hedef_lat && data.hedef_lon) {
+          setDestinationCoords({ lat: data.hedef_lat, lon: data.hedef_lon });
+        } else {
+          // Varsayılan hedef koordinatı (örnek: İstanbul merkez)
+          setDestinationCoords({ lat: 41.0082, lon: 28.9784 });
+        }
+        
+        // GPS tracking'i devam ettir
+        await resumeGpsTracking(data.id);
+      }
+    } catch (e) {
+      console.log('No active trip found or error:', e);
+    }
+  };
+
+  const resumeGpsTracking = async (gorevId: number) => {
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Konum izni reddedildi');
+        return;
+      }
+
+      // GPS tracking interval'ını başlat
+      const interval = setInterval(async () => {
+        try {
+          await sendSingleGps(gorevId, false);
+        } catch (e) {
+          console.error('GPS tracking error:', e);
+        }
+      }, 15000);
+
+      setTrackingInterval(interval);
+      Alert.alert('Sefer devam ediyor', 'GPS takibi kaldığı yerden devam etti');
+    } catch (e: any) {
+      console.error('Resume GPS tracking error:', e);
+    }
+  };
+
   const signIn = async () => {
+    console.log('SignIn başlatıldı, email:', email, 'isLogin:', isLogin);
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      const { data, error } = await supabase.auth.signInWithPassword({ 
+        email: email.trim().toLowerCase(), 
+        password 
+      });
+      if (error) {
+        console.error('SignIn error:', error);
+        throw error;
+      }
+      console.log('SignIn başarılı:', data.user?.email);
       Alert.alert('Giriş başarılı', `Kullanıcı: ${data.user?.email}`);
     } catch (e: any) {
+      console.error('SignIn catch error:', e);
       setError(e?.message || 'Giriş başarısız');
       Alert.alert('Giriş başarısız', e?.message || '');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const signOut = async () => {
+    try {
+      // Aktif GPS tracking'i durdur
+      if (trackingInterval) {
+        clearInterval(trackingInterval);
+        setTrackingInterval(null);
+      }
+      
+      // State'leri temizle
+      setGpsActive(false);
+      setActiveTaskId(null);
+      setDestinationCoords(null);
+      setCurrentTask(null);
+      setLastLocation(null);
+      setTasks([]);
+      setError(null);
+      
+      // Supabase'den çıkış yap
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Sign out error:', error);
+        Alert.alert('Çıkış Hatası', error.message);
+      } else {
+        Alert.alert('Başarılı', 'Çıkış yapıldı');
+      }
+    } catch (e: any) {
+      console.error('Sign out error:', e);
+      Alert.alert('Hata', e?.message || 'Çıkış yapılamadı');
     }
   };
 
@@ -133,6 +240,16 @@ export default function App() {
       setGpsActive(true);
       setActiveTaskId(gorevId.toString());
 
+      // Hedef koordinatlarını ayarla (task'tan al veya varsayılan ayarla)
+      const selectedTask = tasks.find(task => task.id === gorevId);
+      if (selectedTask && selectedTask.hedef_lat && selectedTask.hedef_lon) {
+        setDestinationCoords({ lat: selectedTask.hedef_lat, lon: selectedTask.hedef_lon });
+      } else {
+        // Varsayılan hedef koordinatı (örnek: İstanbul merkez)
+        setDestinationCoords({ lat: 41.0082, lon: 28.9784 });
+      }
+      setCurrentTask(selectedTask);
+
       // İlk GPS verisini gönder ve görevi başlat
       await sendSingleGps(gorevId, true);
 
@@ -169,7 +286,7 @@ export default function App() {
             sefer_durumu: 'tamamlandi',
             bitis_zamani: new Date().toISOString()
           })
-          .eq('id', parseInt(activeTaskId))
+          .eq('id', activeTaskId)
           .eq('sofor_id', session?.user?.id);
 
         if (updateError) {
@@ -182,6 +299,9 @@ export default function App() {
 
     setGpsActive(false);
     setActiveTaskId(null);
+    setDestinationCoords(null);
+    setCurrentTask(null);
+    setLastLocation(null);
     Alert.alert('Sefer tamamlandı', 'GPS takibi durduruldu');
     fetchTasks(); // Görevleri yenile
   };
@@ -234,6 +354,27 @@ export default function App() {
 
     // Son konumu güncelle
     setLastLocation(currentLocation);
+    
+    // Otomatik varış kontrolü
+    if (destinationCoords) {
+      const distanceToDestination = calculateDistance(currentLocation, destinationCoords);
+      const arrivalRadius = 100; // 100 metre yaklaştığında sefer biter
+      
+      if (distanceToDestination <= arrivalRadius) {
+        console.log(`Arrived at destination! Distance: ${distanceToDestination}m`);
+        Alert.alert(
+          'Varış Noktasına Ulaştınız!', 
+          `Hedefe ${Math.round(distanceToDestination)}m mesafede. Sefer otomatik olarak tamamlandı.`,
+          [
+            {
+              text: 'Tamam',
+              onPress: () => stopGpsTracking()
+            }
+          ]
+        );
+        return;
+      }
+    }
 
     // İlk GPS'te görevi "seferde" durumuna getir
     if (isFirstGps) {
@@ -354,7 +495,16 @@ export default function App() {
 
               <TouchableOpacity
                 style={[styles.submitButton, loading && styles.disabledButton]}
-                onPress={isLogin ? signIn : signUp}
+                onPress={() => {
+                  console.log('Submit butonu tıklandı, isLogin:', isLogin);
+                  if (isLogin) {
+                    console.log('SignIn çağrılıyor...');
+                    signIn();
+                  } else {
+                    console.log('SignUp çağrılıyor...');
+                    signUp();
+                  }
+                }}
                 disabled={loading}
               >
                 {loading ? (
@@ -385,7 +535,7 @@ export default function App() {
         <Text style={styles.welcomeText}>Hoşgeldiniz 👋</Text>
         <TouchableOpacity 
           style={styles.logoutButton}
-          onPress={() => supabase.auth.signOut()}
+          onPress={signOut}
         >
           <Text style={styles.logoutButtonText}>Çıkış Yap</Text>
         </TouchableOpacity>
@@ -394,6 +544,20 @@ export default function App() {
       {/* Tasks Section */}
       <View style={styles.tasksSection}>
         <Text style={styles.sectionTitle}>Atanmış Görevleriniz</Text>
+        
+        {/* Aktif Sefer Durumu */}
+        {gpsActive && currentTask && (
+          <View style={styles.activeTaskPanel}>
+            <Text style={styles.activePanelTitle}>🚛 Aktif Sefer</Text>
+            <Text style={styles.activePanelText}>İlan No: {currentTask.ilan_no}</Text>
+            <Text style={styles.activePanelText}>Durum: {currentTask.sefer_durumu}</Text>
+            {destinationCoords && (
+              <Text style={styles.activePanelText}>
+                📍 Hedef: {destinationCoords.lat.toFixed(4)}, {destinationCoords.lon.toFixed(4)}
+              </Text>
+            )}
+          </View>
+        )}
         
         {loading && (
           <View style={styles.loadingContainer}>
@@ -701,6 +865,30 @@ const styles = StyleSheet.create({
     color: '#64748b',
     textAlign: 'center',
     marginTop: 16,
+  },
+  activeTaskPanel: {
+    backgroundColor: '#10b981',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    marginHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  activePanelTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  activePanelText: {
+    fontSize: 14,
+    color: '#ffffff',
+    marginBottom: 4,
+    opacity: 0.9,
   },
 });
 
