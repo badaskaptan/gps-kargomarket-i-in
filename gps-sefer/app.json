@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "gps-sefer",
-    "slug": "gps-sefer",
+    "name": "KargoMarketing GPS Takip",
+    "slug": "gps-takip-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,9 +13,16 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "com.kargomarketing.gpstakip",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.kargomarketing.gpstakip",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -24,6 +31,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b8195573-8d08-44aa-934c-fc6023ef4095"
+      }
+    },
+    "owner": "emrahbadas"
   }
 }

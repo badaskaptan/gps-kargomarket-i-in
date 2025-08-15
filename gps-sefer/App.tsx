@@ -52,6 +52,7 @@ export default function App() {
   const [currentTask, setCurrentTask] = useState<any>(null);
   const [isLogin, setIsLogin] = useState(true); // Login/Register toggle
   const [rainbowAnim] = useState(new Animated.Value(0));
+  const [showHistory, setShowHistory] = useState(false); // Geçmiş görevleri göster/gizle
 
   // Rainbow animation
   useEffect(() => {
@@ -235,13 +236,43 @@ export default function App() {
       const { data, error } = await supabase
         .from('gorevler')
         .select('*')
-        .eq('sofor_id', session?.user?.id);
+        .eq('sofor_id', session?.user?.id)
+        .in('durum', ['bekliyor', 'onaylandi', 'basladi']) // Sadece aktif görevler
+        .order('olusturma_tarihi', { ascending: false });
       if (error) throw error;
       setTasks(data || []);
     } catch (e: any) {
       setError(e?.message || 'Görevler alınamadı');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCompletedTasks = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('gorevler')
+        .select('*')
+        .eq('sofor_id', session?.user?.id)
+        .in('durum', ['tamamlandi', 'iptal']) // Sadece bitmiş görevler
+        .order('olusturma_tarihi', { ascending: false })
+        .limit(20); // Son 20 tamamlanmış görev
+      if (error) throw error;
+      setTasks(data || []);
+    } catch (e: any) {
+      setError(e?.message || 'Geçmiş görevler alınamadı');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleHistory = () => {
+    setShowHistory(!showHistory);
+    if (!showHistory) {
+      fetchCompletedTasks();
+    } else {
+      fetchTasks();
     }
   };
 
@@ -585,17 +616,29 @@ export default function App() {
           </View>
           <Text style={styles.welcomeText}>Hoşgeldiniz 👋</Text>
         </View>
-        <TouchableOpacity 
-          style={styles.logoutButton}
-          onPress={signOut}
-        >
-          <Text style={styles.logoutButtonText}>Çıkış Yap</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            style={[styles.historyButton, showHistory && styles.historyButtonActive]}
+            onPress={toggleHistory}
+          >
+            <Text style={[styles.historyButtonText, showHistory && styles.historyButtonTextActive]}>
+              {showHistory ? 'Aktif Görevler' : 'Geçmiş'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.logoutButton}
+            onPress={signOut}
+          >
+            <Text style={styles.logoutButtonText}>Çıkış Yap</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tasks Section */}
       <View style={styles.tasksSection}>
-        <Text style={styles.sectionTitle}>Atanmış Görevleriniz</Text>
+        <Text style={styles.sectionTitle}>
+          {showHistory ? 'Tamamlanan Görevleriniz' : 'Atanmış Görevleriniz'}
+        </Text>
         
         {/* Aktif Sefer Durumu */}
         {gpsActive && currentTask && (
@@ -942,6 +985,27 @@ const styles = StyleSheet.create({
   logoutButtonText: {
     color: '#ffffff',
     fontWeight: '600',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  historyButton: {
+    backgroundColor: '#e5e7eb',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  historyButtonActive: {
+    backgroundColor: '#3b82f6',
+  },
+  historyButtonText: {
+    color: '#374151',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  historyButtonTextActive: {
+    color: '#ffffff',
   },
   tasksSection: {
     flex: 1,
