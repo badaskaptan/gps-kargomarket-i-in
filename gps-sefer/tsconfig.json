@@ -3,7 +3,13 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "jsx": "react-native",
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "module": "esnext",
+    "target": "esnext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   },
   "extends": "expo/tsconfig.base"
 }
