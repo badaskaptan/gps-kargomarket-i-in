@@ -7,11 +7,11 @@ import {
   Button,
   Alert,
   ActivityIndicator,
-  FlatList, 
-  View, 
-  TextInput, 
-  StyleSheet, 
-  TouchableOpacity, 
+  FlatList,
+  View,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
   Dimensions,
   KeyboardAvoidingView,
   Platform,
@@ -47,8 +47,8 @@ export default function App() {
   const [gpsActive, setGpsActive] = useState(false);
   const [trackingInterval, setTrackingInterval] = useState<NodeJS.Timeout | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [lastLocation, setLastLocation] = useState<{lat: number, lon: number} | null>(null);
-  const [destinationCoords, setDestinationCoords] = useState<{lat: number, lon: number} | null>(null);
+  const [lastLocation, setLastLocation] = useState<{ lat: number, lon: number } | null>(null);
+  const [destinationCoords, setDestinationCoords] = useState<{ lat: number, lon: number } | null>(null);
   const [currentTask, setCurrentTask] = useState<any>(null);
   const [isLogin, setIsLogin] = useState(true); // Login/Register toggle
   const [rainbowAnim] = useState(new Animated.Value(0));
@@ -72,15 +72,15 @@ export default function App() {
     const initializeApp = async () => {
       const { data } = await supabase.auth.getSession();
       setSession(data.session);
-      
+
       // Aktif sefer kontrolü - kesintisiz çalışma
       if (data.session) {
         await checkActiveTrip();
       }
     };
-    
+
     initializeApp();
-    
+
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -113,13 +113,13 @@ export default function App() {
         .eq('sofor_id', session?.user?.id)
         .eq('sefer_durumu', 'aktif')
         .single();
-      
+
       if (data && !error) {
         console.log('Active trip found, resuming GPS tracking:', data.id);
         setCurrentTask(data);
         setActiveTaskId(data.id.toString());
         setGpsActive(true);
-        
+
         // Hedef koordinatlarını varsa ayarla
         if (data.hedef_lat && data.hedef_lon) {
           setDestinationCoords({ lat: data.hedef_lat, lon: data.hedef_lon });
@@ -127,7 +127,7 @@ export default function App() {
           // Varsayılan hedef koordinatı (örnek: İstanbul merkez)
           setDestinationCoords({ lat: 41.0082, lon: 28.9784 });
         }
-        
+
         // GPS tracking'i devam ettir
         await resumeGpsTracking(data.id);
       }
@@ -165,9 +165,9 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ 
-        email: email.trim().toLowerCase(), 
-        password 
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password
       });
       if (error) {
         console.error('SignIn error:', error);
@@ -191,7 +191,7 @@ export default function App() {
         clearInterval(trackingInterval);
         setTrackingInterval(null);
       }
-      
+
       // State'leri temizle
       setGpsActive(false);
       setActiveTaskId(null);
@@ -200,7 +200,7 @@ export default function App() {
       setLastLocation(null);
       setTasks([]);
       setError(null);
-      
+
       // Supabase'den çıkış yap
       const { error } = await supabase.auth.signOut();
       if (error) {
@@ -330,7 +330,7 @@ export default function App() {
         // Görevi tamamla
         const { error: updateError } = await supabase
           .from('gorevler')
-          .update({ 
+          .update({
             sefer_durumu: 'tamamlandi',
             bitis_zamani: new Date().toISOString()
           })
@@ -357,23 +357,23 @@ export default function App() {
   const sendSingleGps = async (gorevId: number, isFirstGps: boolean = false) => {
     const location = await Location.getCurrentPositionAsync({});
     const { latitude, longitude, speed, accuracy, heading } = location.coords;
-    
+
     // Akıllı filtreleme: Sadece hareket halinde ve anlamlı değişiklik varsa kaydet
     const currentLocation = { lat: latitude, lon: longitude };
     const minDistance = 10; // 10 meter minimum hareket
     const minSpeed = 1; // 1 km/h minimum hız
-    
+
     if (!isFirstGps && lastLocation) {
       const distance = calculateDistance(lastLocation, currentLocation);
       const currentSpeed = (speed || 0) * 3.6; // m/s to km/h
-      
+
       // Hareket etmiyorsa ve yavaşsa kaydetme
       if (distance < minDistance && currentSpeed < minSpeed) {
         console.log('GPS skipped: No significant movement', { distance, speed: currentSpeed });
         return;
       }
     }
-    
+
     // GPS kayıtları tablosuna veri ekle
     const { error: gpsError } = await supabase
       .from('gps_kayitlari')
@@ -402,16 +402,16 @@ export default function App() {
 
     // Son konumu güncelle
     setLastLocation(currentLocation);
-    
+
     // Otomatik varış kontrolü
     if (destinationCoords) {
       const distanceToDestination = calculateDistance(currentLocation, destinationCoords);
       const arrivalRadius = 100; // 100 metre yaklaştığında sefer biter
-      
+
       if (distanceToDestination <= arrivalRadius) {
         console.log(`Arrived at destination! Distance: ${distanceToDestination}m`);
         Alert.alert(
-          'Varış Noktasına Ulaştınız!', 
+          'Varış Noktasına Ulaştınız!',
           `Hedefe ${Math.round(distanceToDestination)}m mesafede. Sefer otomatik olarak tamamlandı.`,
           [
             {
@@ -428,7 +428,7 @@ export default function App() {
     if (isFirstGps) {
       const { error: updateError } = await supabase
         .from('gorevler')
-        .update({ 
+        .update({
           sefer_durumu: 'seferde',
           kabul_edildi_mi: true,
           baslangic_zamani: new Date().toISOString()
@@ -445,17 +445,17 @@ export default function App() {
   };
 
   // Mesafe hesaplama (Haversine formula)
-  const calculateDistance = (pos1: {lat: number, lon: number}, pos2: {lat: number, lon: number}) => {
+  const calculateDistance = (pos1: { lat: number, lon: number }, pos2: { lat: number, lon: number }) => {
     const R = 6371e3; // Earth radius in meters
-    const φ1 = pos1.lat * Math.PI/180;
-    const φ2 = pos2.lat * Math.PI/180;
-    const Δφ = (pos2.lat-pos1.lat) * Math.PI/180;
-    const Δλ = (pos2.lon-pos1.lon) * Math.PI/180;
+    const φ1 = pos1.lat * Math.PI / 180;
+    const φ2 = pos2.lat * Math.PI / 180;
+    const Δφ = (pos2.lat - pos1.lat) * Math.PI / 180;
+    const Δλ = (pos2.lon - pos1.lon) * Math.PI / 180;
 
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) *
+      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c; // Distance in meters
   };
@@ -470,8 +470,8 @@ export default function App() {
 
   if (!session) {
     return (
-      <KeyboardAvoidingView 
-        style={styles.container} 
+      <KeyboardAvoidingView
+        style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={styles.scrollContainer}>
@@ -479,7 +479,7 @@ export default function App() {
           <View style={styles.header}>
             <View style={styles.logoContainer}>
               <View style={styles.brandingTopContainer}>
-                <Animated.View 
+                <Animated.View
                   style={[
                     styles.kmLogoRainbow,
                     {
@@ -507,7 +507,7 @@ export default function App() {
           <View style={styles.authModal}>
             {/* Tab Toggle */}
             <View style={styles.tabContainer}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.tab, isLogin && styles.activeTab]}
                 onPress={() => setIsLogin(true)}
               >
@@ -515,7 +515,7 @@ export default function App() {
                   Giriş Yap
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.tab, !isLogin && styles.activeTab]}
                 onPress={() => setIsLogin(false)}
               >
@@ -599,7 +599,7 @@ export default function App() {
       <View style={styles.dashboardHeader}>
         <View style={styles.dashboardHeaderContent}>
           <View style={styles.dashboardBrandingContainer}>
-            <Animated.View 
+            <Animated.View
               style={[
                 styles.dashboardKmLogoRainbow,
                 {
@@ -617,7 +617,7 @@ export default function App() {
           <Text style={styles.welcomeText}>Hoşgeldiniz 👋</Text>
         </View>
         <View style={styles.headerButtons}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.historyButton, showHistory && styles.historyButtonActive]}
             onPress={toggleHistory}
           >
@@ -625,7 +625,7 @@ export default function App() {
               {showHistory ? 'Aktif Görevler' : 'Geçmiş'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.logoutButton}
             onPress={signOut}
           >
@@ -639,7 +639,7 @@ export default function App() {
         <Text style={styles.sectionTitle}>
           {showHistory ? 'Tamamlanan Görevleriniz' : 'Atanmış Görevleriniz'}
         </Text>
-        
+
         {/* Aktif Sefer Durumu */}
         {gpsActive && currentTask && (
           <View style={styles.activeTaskPanel}>
@@ -653,7 +653,7 @@ export default function App() {
             )}
           </View>
         )}
-        
+
         {loading && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#3b82f6" />
@@ -680,17 +680,17 @@ export default function App() {
                   <Text style={styles.taskStatusText}>{item.sefer_durumu}</Text>
                 </View>
               </View>
-              
+
               <TouchableOpacity
                 style={[
-                  styles.gpsButton, 
+                  styles.gpsButton,
                   (gpsActive && activeTaskId === item.id.toString()) && styles.gpsButtonActive
                 ]}
                 onPress={() => sendGps(item.id)}
               >
                 <Text style={styles.gpsButtonText}>
-                  {(gpsActive && activeTaskId === item.id.toString()) 
-                    ? "� Seferi Bitir" 
+                  {(gpsActive && activeTaskId === item.id.toString())
+                    ? "� Seferi Bitir"
                     : "� Sefere Başla"
                   }
                 </Text>
@@ -704,7 +704,7 @@ export default function App() {
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
-        
+
         {/* Footer Branding */}
         <View style={styles.footerBranding}>
           <Text style={styles.footerText}>© 2025 KargoMarketing.com</Text>
