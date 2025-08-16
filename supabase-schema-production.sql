@@ -245,6 +245,7 @@ BEGIN
   -- TC kimlik kontrolü
   IF LENGTH(NEW.tc_kimlik) != 11 OR NEW.tc_kimlik ~ '[^0-9]' THEN
     NEW.durum := 'gecersiz_tc';
+    NEW.sefer_durumu := 'gecersiz_tc';  -- ✅ Her iki kolonu da güncelle
     RETURN NEW;
   END IF;
   
@@ -254,8 +255,10 @@ BEGIN
   IF matched_driver_id IS NOT NULL THEN
     NEW.sofor_id := matched_driver_id;
     NEW.durum := 'atandi';
+    NEW.sefer_durumu := 'atandi';      -- ✅ Her iki kolonu da güncelle
   ELSE
     NEW.durum := 'sofor_bulunamadi';
+    NEW.sefer_durumu := 'beklemede';   -- ✅ Mobil app için beklemede durumuna çevir
   END IF;
   
   RETURN NEW;

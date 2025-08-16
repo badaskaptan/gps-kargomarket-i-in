@@ -134,6 +134,44 @@ export default function App() {
     }
   };
 
+  // Görevi Kabul Et fonksiyonu
+  const acceptTask = async (taskId: string) => {
+    try {
+      setLoading(true);
+      
+      // Durum kolonunu 'atandi' yap VE kabul_edildi_mi'yi true yap
+      const { error: updateError } = await supabase
+        .from('gorevler')
+        .update({ 
+          durum: 'atandi',
+          kabul_edildi_mi: true,  // ✅ Şoför görevi kabul etti
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', taskId);
+
+      if (updateError) {
+        setError('Görev kabul hatası: ' + updateError.message);
+        return;
+      }
+
+      // Görevleri yeniden yükle
+      const { data: updatedTasks } = await supabase
+        .from('gorevler')
+        .select('*')
+        .eq('sofor_id', session.user.id)
+        .order('created_at', { ascending: false });
+
+      setTasks(updatedTasks || []);
+      
+      Alert.alert('Başarılı', 'Görev kabul edildi! Artık sefere başlayabilirsiniz.');
+      
+    } catch (error: any) {
+      setError('Görev kabul hatası: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // GPS Tracking functions
   const startGPSTracking = async (taskId: string) => {
     try {
@@ -147,10 +185,13 @@ export default function App() {
       setActiveTaskId(taskId);
       setGpsTracking(true);
 
-      // Görevi 'yolda' durumuna güncelle
+      // Görevi 'yolda' durumuna güncelle VE başlangıç zamanını kaydet
       await supabase
         .from('gorevler')
-        .update({ sefer_durumu: 'yolda' })
+        .update({ 
+          sefer_durumu: 'yolda',
+          baslangic_zamani: new Date().toISOString()  // ✅ Başlangıç timestamp'i
+        })
         .eq('id', taskId);
 
       // İlk konumu al
@@ -187,10 +228,13 @@ export default function App() {
     if (!activeTaskId) return;
 
     try {
-      // Görevi 'tamamlandi' durumuna güncelle
+      // Görevi 'tamamlandi' durumuna güncelle VE bitiş zamanını kaydet
       await supabase
         .from('gorevler')
-        .update({ sefer_durumu: 'tamamlandi' })
+        .update({ 
+          sefer_durumu: 'tamamlandi',
+          bitis_zamani: new Date().toISOString()  // ✅ Bitiş timestamp'i
+        })
         .eq('id', activeTaskId);
 
       setGpsTracking(false);
@@ -693,7 +737,15 @@ export default function App() {
                 {item.ad && (
                   <Text style={styles.taskSubTitle}>Ad: {item.ad}</Text>
                 )}
-                <Text style={styles.taskStatusText}>Durum: {item.sefer_durumu}</Text>
+                <Text style={styles.taskStatusText}>
+                  Durum: {item.durum === 'atandi' ? '✅ Kabul Edildi' : '⏳ Beklemede'}
+                </Text>
+                <Text style={styles.taskStatusText}>
+                  Kabul: {item.kabul_edildi_mi ? '✅ Evet' : '❌ Hayır'}
+                </Text>
+                <Text style={styles.taskStatusText}>
+                  Sefer: {item.sefer_durumu || 'Henüz başlamadı'}
+                </Text>
                 {item.customer_info && (
                   <Text style={styles.taskInfoText}>Müşteri: {JSON.stringify(item.customer_info)}</Text>
                 )}
@@ -701,19 +753,33 @@ export default function App() {
                   <Text style={styles.taskInfoText}>Adres: {JSON.stringify(item.delivery_address)}</Text>
                 )}
 
-                {/* GPS Tracking Butonları */}
-                {item.sofor_id === session.user.id && (item.sefer_durumu === 'atandi' || item.sefer_durumu === 'atanmis') && (
+                {/* 1. GÖREV KABUL ET BUTONU - Durum: sofor_bulunamadi -> atandi */}
+                {item.sofor_id === session.user.id && item.durum === 'sofor_bulunamadi' && (
+                  <TouchableOpacity
+                    style={styles.acceptButton}
+                    onPress={() => acceptTask(item.id)}
+                    disabled={loading}
+                  >
+                    <Text style={styles.acceptButtonText}>
+                      ✅ Görevi Kabul Et
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* 2. SEFERİ BAŞLAT BUTONU - Durum: atandi, kabul_edildi_mi: true ve sefer_durumu: atandi/null */}
+                {item.sofor_id === session.user.id && item.durum === 'atandi' && item.kabul_edildi_mi === true && (item.sefer_durumu === 'atandi' || !item.sefer_durumu) && (
                   <TouchableOpacity
                     style={styles.gpsButton}
                     onPress={() => startGPSTracking(item.id)}
                     disabled={gpsTracking}
                   >
                     <Text style={styles.gpsButtonText}>
-                      📍 GPS Takibi Başlat
+                      📍 Seferi Başlat
                     </Text>
                   </TouchableOpacity>
                 )}
 
+                {/* 3. SEFERİ TAMAMLA BUTONU - Sefer durumu: yolda */}
                 {item.sofor_id === session.user.id && item.sefer_durumu === 'yolda' && gpsTracking && activeTaskId === item.id && (
                   <View>
                     <TouchableOpacity
@@ -1123,10 +1189,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
+  acceptButton: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 12,
+  },
   gpsButtonActive: {
     backgroundColor: '#f59e0b',
   },
   gpsButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  acceptButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
