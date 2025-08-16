@@ -54,7 +54,7 @@ serve(async (req: Request) => {
 
 // 👨‍💼 Real-time GPS: Backend1'e anlık GPS gönder
 async function handleRealtimeGPS(req: Request, corsHeaders: any) {
-  const { ilan_no, driver_id, location, timestamp, customer_info } = await req.json()
+  const { ilan_no, sofor_id, location, timestamp, customer_info } = await req.json()
 
   // Backend1'e anlık GPS gönder (UPDATE, depolama yapma)
   await kargomarketing
@@ -64,7 +64,7 @@ async function handleRealtimeGPS(req: Request, corsHeaders: any) {
       updated_at: timestamp
     })
     .eq('ilan_no', ilan_no)
-    .eq('sofor_id', driver_id)
+    .eq('sofor_id', sofor_id)
 
   return new Response(JSON.stringify({
     success: true,
@@ -76,13 +76,13 @@ async function handleRealtimeGPS(req: Request, corsHeaders: any) {
 
 // 👨‍💼 Driver Assigned: Şoför atandığında Backend1'i bilgilendir
 async function handleDriverAssigned(req: Request, corsHeaders: any) {
-  const { ilan_no, driver_id, task_id, status } = await req.json()
+  const { ilan_no, sofor_id, task_id, status } = await req.json()
 
   // Backend1'de şoför bilgisini güncelle
   await kargomarketing
     .from('gorevler')
     .update({
-      sofor_id: driver_id,
+      sofor_id: sofor_id,
       sefer_durumu: status,
       baslama_zamani: new Date().toISOString()
     })

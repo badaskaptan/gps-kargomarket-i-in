@@ -38,21 +38,334 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 export default function App() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // Oturum ve görevler için state
   const [session, setSession] = useState<any>(null);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [registerData, setRegisterData] = useState({
+    ad: '',
+    soyad: '',
+    tc_kimlik: '',
+    email: '',
+    telefon: '',
+    password: ''
+  });
+  const [loginData, setLoginData] = useState({
+    email: '',
+    password: ''
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [gpsActive, setGpsActive] = useState(false);
-  const [trackingInterval, setTrackingInterval] = useState<NodeJS.Timeout | null>(null);
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [lastLocation, setLastLocation] = useState<{ lat: number, lon: number } | null>(null);
-  const [destinationCoords, setDestinationCoords] = useState<{ lat: number, lon: number } | null>(null);
-  const [currentTask, setCurrentTask] = useState<any>(null);
-  const [isLogin, setIsLogin] = useState(true); // Login/Register toggle
   const [rainbowAnim] = useState(new Animated.Value(0));
-  const [showHistory, setShowHistory] = useState(false); // Geçmiş görevleri göster/gizle
+  const [showLogin, setShowLogin] = useState(true); // true: giriş, false: kayıt
+
+  // GPS Tracking states
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [gpsTracking, setGpsTracking] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number, lng: number } | null>(null);
+
+  // Debug: Gerçek veritabanı durumu kontrolü
+  const checkRealDatabaseStatus = async () => {
+    if (!session?.user?.id) {
+      Alert.alert('Hata', 'Oturum bulunamadı');
+      return;
+    }
+
+    try {
+      console.log('🔍 Gerçek veritabanı durumu kontrol ediliyor...');
+      console.log('👤 User ID:', session.user.id);
+
+      // 1. Bu kullanıcının profil bilgilerini kontrol et
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+
+      console.log('📋 Kullanıcı Profili:', profile);
+      console.log('❌ Profil Hatası:', profileError);
+
+      if (!profile || !profile.tc_kimlik) {
+        Alert.alert('Profil Sorunu', 'TC kimlik bilgisi eksik!');
+        return;
+      }
+
+      // 2. KargoMarketing.com'dan gelen beklemede görevleri kontrol et
+      const { data: pendingTasks, error: pendingError } = await supabase
+        .from('gorevler')
+        .select('*')
+        .eq('tc_kimlik', profile.tc_kimlik)
+        .is('sofor_id', null)
+        .in('sefer_durumu', ['beklemede', 'yeni']);
+
+      console.log('⏳ Beklemede Görevler:', pendingTasks);
+      console.log('❌ Beklemede Görev Hatası:', pendingError);
+
+      // 3. Bu kullanıcıya atanmış görevleri kontrol et
+      const { data: assignedTasks, error: assignedError } = await supabase
+        .from('gorevler')
+        .select('*')
+        .eq('sofor_id', session.user.id);
+
+      console.log('✅ Atanmış Görevler:', assignedTasks);
+      console.log('❌ Atanmış Görev Hatası:', assignedError);
+
+      // 4. Tüm TC kimlik eşleştirmelerini kontrol et
+      const { data: allMatchingTasks, error: allMatchingError } = await supabase
+        .from('gorevler')
+        .select('*')
+        .eq('tc_kimlik', profile.tc_kimlik);
+
+      console.log('🎯 TC Kimlik Eşleşen Tüm Görevler:', allMatchingTasks);
+
+      // Sonuç raporu
+      Alert.alert(
+        'Gerçek Veritabanı Durumu',
+        `👤 Profil: ${profile.ad} ${profile.soyad}\n` +
+        `🆔 TC: ${profile.tc_kimlik}\n\n` +
+        `⏳ Beklemede: ${pendingTasks?.length || 0} görev\n` +
+        `✅ Atanmış: ${assignedTasks?.length || 0} görev\n` +
+        `🎯 TC Eşleşen: ${allMatchingTasks?.length || 0} görev\n\n` +
+        `💡 KargoMarketing.com'dan TC kimlik ile görev gelirse otomatik atanır.`
+      );
+
+    } catch (error: any) {
+      console.error('Database kontrol hatası:', error);
+      Alert.alert('Hata', 'Database kontrolü başarısız: ' + error.message);
+    }
+  };
+
+  // GPS Tracking functions
+  const startGPSTracking = async (taskId: string) => {
+    try {
+      // İzin iste
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setError('GPS izni gerekli');
+        return;
+      }
+
+      setActiveTaskId(taskId);
+      setGpsTracking(true);
+
+      // Görevi 'yolda' durumuna güncelle
+      await supabase
+        .from('gorevler')
+        .update({ sefer_durumu: 'yolda' })
+        .eq('id', taskId);
+
+      // İlk konumu al
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const newLocation = {
+        lat: location.coords.latitude,
+        lng: location.coords.longitude
+      };
+      setCurrentLocation(newLocation);
+
+      // GPS kaydını veritabanına ekle
+      await supabase
+        .from('gps_kayitlari')
+        .insert({
+          gorev_id: taskId,
+          sofor_id: session.user.id,
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          hiz: location.coords.speed || 0,
+          yon: location.coords.heading || 0,
+          dogruluk: location.coords.accuracy || 0
+        });
+
+      console.log('GPS tracking başlatıldı');
+    } catch (error: any) {
+      setError('GPS başlatma hatası: ' + error.message);
+    }
+  };
+
+  const stopGPSTracking = async () => {
+    if (!activeTaskId) return;
+
+    try {
+      // Görevi 'tamamlandi' durumuna güncelle
+      await supabase
+        .from('gorevler')
+        .update({ sefer_durumu: 'tamamlandi' })
+        .eq('id', activeTaskId);
+
+      setGpsTracking(false);
+      setActiveTaskId(null);
+      setCurrentLocation(null);
+
+      // Görevleri yeniden yükle
+      window.location.reload();
+
+      console.log('GPS tracking durduruldu');
+    } catch (error: any) {
+      setError('GPS durdurma hatası: ' + error.message);
+    }
+  };
+
+  // GPS location tracking interval (her 10 saniyede bir)
+  useEffect(() => {
+    let locationInterval: NodeJS.Timeout;
+
+    if (gpsTracking && activeTaskId && session) {
+      locationInterval = setInterval(async () => {
+        try {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+
+          const newLocation = {
+            lat: location.coords.latitude,
+            lng: location.coords.longitude
+          };
+          setCurrentLocation(newLocation);
+
+          // GPS kaydını veritabanına ekle
+          await supabase
+            .from('gps_kayitlari')
+            .insert({
+              gorev_id: activeTaskId,
+              sofor_id: session.user.id,
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              hiz: location.coords.speed || 0,
+              yon: location.coords.heading || 0,
+              dogruluk: location.coords.accuracy || 0
+            });
+
+          console.log('GPS location güncellendi:', newLocation);
+        } catch (error) {
+          console.error('GPS güncelleme hatası:', error);
+        }
+      }, 10000); // 10 saniye
+    }
+
+    return () => {
+      if (locationInterval) {
+        clearInterval(locationInterval);
+      }
+    };
+  }, [gpsTracking, activeTaskId, session]);
+
+  // Session monitoring
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event, session?.user?.id);
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Gerçek senaryo: Kullanıcı giriş yaptığında TC kimlik ile görev eşleştirmesi
+  useEffect(() => {
+    const fetchAndUpdateTasks = async () => {
+      if (!session?.user?.id) {
+        console.log('Session bulunamadı, görevler yüklenmiyor');
+        return;
+      }
+
+      console.log('🔍 Gerçek senaryo: TC kimlik eşleştirmesi başlatılıyor...');
+      setLoading(true);
+      setError(null);
+
+      try {
+        // Kullanıcının profil bilgilerini al
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('tc_kimlik, ad, soyad')
+          .eq('id', session.user.id)
+          .single();
+
+        if (profileError || !profile?.tc_kimlik) {
+          console.log('❌ Profil bilgileri eksik:', profileError);
+          setError('TC kimlik bilgisi bulunamadı. Profil güncellenmesi gerekiyor.');
+          setLoading(false);
+          return;
+        }
+
+        console.log('👤 Kullanıcı profili:', profile);
+        console.log(`🎯 TC kimlik eşleştirmesi: "${profile.tc_kimlik}"`);
+
+        // KargoMarketing.com'dan gelen görevlerde TC kimlik ile eşleştirme yap
+        const { data: pendingTasks, error: matchError } = await supabase
+          .from('gorevler')
+          .select('*')
+          .eq('tc_kimlik', profile.tc_kimlik)  // Exact TC kimlik match
+          .is('sofor_id', null)  // Henüz şoför atanmamış
+          .in('sefer_durumu', ['beklemede', 'yeni']);  // Beklemede olan görevler
+
+        console.log('📋 Beklemede olan görevler:', pendingTasks);
+        
+        if (pendingTasks && pendingTasks.length > 0) {
+          console.log(`✅ ${pendingTasks.length} beklemede görev bulundu, atama yapılıyor...`);
+          
+          // Görevleri bu şoföre ata
+          for (const task of pendingTasks) {
+            console.log(`📌 Görev atanıyor: ${task.ilan_no} → ${profile.ad} ${profile.soyad}`);
+            
+            const { error: updateError } = await supabase
+              .from('gorevler')
+              .update({
+                sofor_id: session.user.id,
+                sefer_durumu: 'atandi',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', task.id);
+
+            if (updateError) {
+              console.error(`❌ Görev atama hatası (${task.ilan_no}):`, updateError);
+            } else {
+              console.log(`✅ Görev başarıyla atandı: ${task.ilan_no}`);
+            }
+          }
+        } else {
+          console.log('📭 TC kimlik ile eşleşen beklemede görev bulunamadı');
+          console.log('💡 Bu normal! KargoMarketing.com\'dan henüz görev atanmamış olabilir.');
+        }
+
+        // Kullanıcıya atanmış tüm görevleri getir (hem yeni atananlar hem eskiler)
+        const { data: allUserTasks, error: tasksError } = await supabase
+          .from('gorevler')
+          .select('*')
+          .eq('sofor_id', session.user.id)
+          .order('created_at', { ascending: false });
+
+        if (tasksError) {
+          console.error('❌ Görev listesi alma hatası:', tasksError);
+          setError('Görevler alınamadı: ' + tasksError.message);
+        } else {
+          setTasks(allUserTasks || []);
+          console.log(`📊 Toplam atanmış görev sayısı: ${allUserTasks?.length || 0}`);
+          
+          // Dashboard için bilgi ver
+          if (allUserTasks && allUserTasks.length > 0) {
+            const durumlariGoster = allUserTasks.map(t => `${t.ilan_no}: ${t.sefer_durumu}`).join(', ');
+            console.log('📈 Görev durumları:', durumlariGoster);
+          }
+        }
+      } catch (error: any) {
+        console.error('💥 Görev eşleştirme hatası:', error);
+        setError('Görev eşleştirme hatası: ' + error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (session) fetchAndUpdateTasks();
+  }, [session]);
+  // Çıkış fonksiyonu (setSession erişimi için içeride tanımlanmalı)
+  const signOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      setSession(null);
+    } catch (e) {
+      // Hata yönetimi (opsiyonel)
+    }
+  };
 
   // Rainbow animation
   useEffect(() => {
@@ -68,406 +381,12 @@ export default function App() {
     startRainbowAnimation();
   }, []);
 
-  useEffect(() => {
-    const initializeApp = async () => {
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session);
+  // Giriş, profil, kayıt modalı ve ilgili state'ler kaldırıldı
+  // Sadece yeni kayıt modalı olacak
 
-      // Aktif sefer kontrolü - kesintisiz çalışma
-      if (data.session) {
-        await checkActiveTrip();
-      }
-    };
 
-    initializeApp();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-    return () => {
-      listener?.subscription.unsubscribe();
-    };
-  }, []);
-
-  // Cleanup tracking interval on unmount
-  useEffect(() => {
-    return () => {
-      if (trackingInterval) {
-        clearInterval(trackingInterval);
-      }
-    };
-  }, [trackingInterval]);
-
-  useEffect(() => {
-    if (session) {
-      fetchTasks();
-    }
-  }, [session]);
-
-  // Aktif sefer kontrolü - kesintisiz çalışma
-  const checkActiveTrip = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('gorevler')
-        .select('*')
-        .eq('sofor_id', session?.user?.id)
-        .eq('sefer_durumu', 'aktif')
-        .single();
-
-      if (data && !error) {
-        console.log('Active trip found, resuming GPS tracking:', data.id);
-        setCurrentTask(data);
-        setActiveTaskId(data.id.toString());
-        setGpsActive(true);
-
-        // Hedef koordinatlarını varsa ayarla
-        if (data.hedef_lat && data.hedef_lon) {
-          setDestinationCoords({ lat: data.hedef_lat, lon: data.hedef_lon });
-        } else {
-          // Varsayılan hedef koordinatı (örnek: İstanbul merkez)
-          setDestinationCoords({ lat: 41.0082, lon: 28.9784 });
-        }
-
-        // GPS tracking'i devam ettir
-        await resumeGpsTracking(data.id);
-      }
-    } catch (e) {
-      console.log('No active trip found or error:', e);
-    }
-  };
-
-  const resumeGpsTracking = async (gorevId: number) => {
-    try {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Konum izni reddedildi');
-        return;
-      }
-
-      // GPS tracking interval'ını başlat
-      const interval = setInterval(async () => {
-        try {
-          await sendSingleGps(gorevId, false);
-        } catch (e) {
-          console.error('GPS tracking error:', e);
-        }
-      }, 15000);
-
-      setTrackingInterval(interval);
-      Alert.alert('Sefer devam ediyor', 'GPS takibi kaldığı yerden devam etti');
-    } catch (e: any) {
-      console.error('Resume GPS tracking error:', e);
-    }
-  };
-
-  const signIn = async () => {
-    console.log('SignIn başlatıldı, email:', email, 'isLogin:', isLogin);
-    setLoading(true);
-    setError(null);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
-        password
-      });
-      if (error) {
-        console.error('SignIn error:', error);
-        throw error;
-      }
-      console.log('SignIn başarılı:', data.user?.email);
-      Alert.alert('Giriş başarılı', `Kullanıcı: ${data.user?.email}`);
-    } catch (e: any) {
-      console.error('SignIn catch error:', e);
-      setError(e?.message || 'Giriş başarısız');
-      Alert.alert('Giriş başarısız', e?.message || '');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const signOut = async () => {
-    try {
-      // Aktif GPS tracking'i durdur
-      if (trackingInterval) {
-        clearInterval(trackingInterval);
-        setTrackingInterval(null);
-      }
-
-      // State'leri temizle
-      setGpsActive(false);
-      setActiveTaskId(null);
-      setDestinationCoords(null);
-      setCurrentTask(null);
-      setLastLocation(null);
-      setTasks([]);
-      setError(null);
-
-      // Supabase'den çıkış yap
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('Sign out error:', error);
-        Alert.alert('Çıkış Hatası', error.message);
-      } else {
-        Alert.alert('Başarılı', 'Çıkış yapıldı');
-      }
-    } catch (e: any) {
-      console.error('Sign out error:', e);
-      Alert.alert('Hata', e?.message || 'Çıkış yapılamadı');
-    }
-  };
-
-  const signUp = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) throw error;
-      Alert.alert('Kayıt başarılı', `Kullanıcı oluşturuldu: ${data.user?.email}. Şimdi giriş yapabilirsiniz.`);
-    } catch (e: any) {
-      setError(e?.message || 'Kayıt başarısız');
-      Alert.alert('Kayıt başarısız', e?.message || '');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchTasks = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('gorevler')
-        .select('*')
-        .eq('sofor_id', session?.user?.id)
-        .in('durum', ['bekliyor', 'onaylandi', 'basladi']) // Sadece aktif görevler
-        .order('olusturma_tarihi', { ascending: false });
-      if (error) throw error;
-      setTasks(data || []);
-    } catch (e: any) {
-      setError(e?.message || 'Görevler alınamadı');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchCompletedTasks = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('gorevler')
-        .select('*')
-        .eq('sofor_id', session?.user?.id)
-        .in('durum', ['tamamlandi', 'iptal']) // Sadece bitmiş görevler
-        .order('olusturma_tarihi', { ascending: false })
-        .limit(20); // Son 20 tamamlanmış görev
-      if (error) throw error;
-      setTasks(data || []);
-    } catch (e: any) {
-      setError(e?.message || 'Geçmiş görevler alınamadı');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleHistory = () => {
-    setShowHistory(!showHistory);
-    if (!showHistory) {
-      fetchCompletedTasks();
-    } else {
-      fetchTasks();
-    }
-  };
-
-  // GPS Tracking Functions
-  const startGpsTracking = async (gorevId: number) => {
-    try {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Konum izni reddedildi');
-        return;
-      }
-
-      setGpsActive(true);
-      setActiveTaskId(gorevId.toString());
-
-      // Hedef koordinatlarını ayarla (task'tan al veya varsayılan ayarla)
-      const selectedTask = tasks.find(task => task.id === gorevId);
-      if (selectedTask && selectedTask.hedef_lat && selectedTask.hedef_lon) {
-        setDestinationCoords({ lat: selectedTask.hedef_lat, lon: selectedTask.hedef_lon });
-      } else {
-        // Varsayılan hedef koordinatı (örnek: İstanbul merkez)
-        setDestinationCoords({ lat: 41.0082, lon: 28.9784 });
-      }
-      setCurrentTask(selectedTask);
-
-      // İlk GPS verisini gönder ve görevi başlat
-      await sendSingleGps(gorevId, true);
-
-      // 15 saniyede bir GPS verisi gönder (akıllı filtreleme ile)
-      const interval = setInterval(async () => {
-        try {
-          await sendSingleGps(gorevId, false);
-        } catch (e) {
-          console.error('GPS tracking error:', e);
-        }
-      }, 15000); // 3 saniye → 15 saniye
-
-      setTrackingInterval(interval);
-      Alert.alert('Sefer başladı', 'Akıllı GPS takibi aktif - sadece hareket halinde konum gönderir');
-    } catch (e: any) {
-      console.error('GPS tracking start error:', e);
-      Alert.alert('Hata', e?.message || 'GPS takibi başlatılamadı');
-      setGpsActive(false);
-    }
-  };
-
-  const stopGpsTracking = async () => {
-    if (trackingInterval) {
-      clearInterval(trackingInterval);
-      setTrackingInterval(null);
-    }
-
-    if (activeTaskId) {
-      try {
-        // Görevi tamamla
-        const { error: updateError } = await supabase
-          .from('gorevler')
-          .update({
-            sefer_durumu: 'tamamlandi',
-            bitis_zamani: new Date().toISOString()
-          })
-          .eq('id', activeTaskId)
-          .eq('sofor_id', session?.user?.id);
-
-        if (updateError) {
-          console.error('Task completion error:', updateError);
-        }
-      } catch (e) {
-        console.error('Stop tracking error:', e);
-      }
-    }
-
-    setGpsActive(false);
-    setActiveTaskId(null);
-    setDestinationCoords(null);
-    setCurrentTask(null);
-    setLastLocation(null);
-    Alert.alert('Sefer tamamlandı', 'GPS takibi durduruldu');
-    fetchTasks(); // Görevleri yenile
-  };
-
-  const sendSingleGps = async (gorevId: number, isFirstGps: boolean = false) => {
-    const location = await Location.getCurrentPositionAsync({});
-    const { latitude, longitude, speed, accuracy, heading } = location.coords;
-
-    // Akıllı filtreleme: Sadece hareket halinde ve anlamlı değişiklik varsa kaydet
-    const currentLocation = { lat: latitude, lon: longitude };
-    const minDistance = 10; // 10 meter minimum hareket
-    const minSpeed = 1; // 1 km/h minimum hız
-
-    if (!isFirstGps && lastLocation) {
-      const distance = calculateDistance(lastLocation, currentLocation);
-      const currentSpeed = (speed || 0) * 3.6; // m/s to km/h
-
-      // Hareket etmiyorsa ve yavaşsa kaydetme
-      if (distance < minDistance && currentSpeed < minSpeed) {
-        console.log('GPS skipped: No significant movement', { distance, speed: currentSpeed });
-        return;
-      }
-    }
-
-    // GPS kayıtları tablosuna veri ekle
-    const { error: gpsError } = await supabase
-      .from('gps_kayitlari')
-      .insert({
-        gorev_id: gorevId,
-        sofor_id: session?.user?.id,
-        latitude: latitude,
-        longitude: longitude,
-        hiz: speed || 0,
-        yon: heading || 0,
-        dogruluk: accuracy || 0,
-        konum_verisi: {
-          lat: latitude,
-          lon: longitude,
-          speed,
-          accuracy,
-          bearing: heading,
-          ts: new Date().toISOString(),
-        },
-        timestamp: new Date().toISOString(),
-      });
-
-    if (gpsError) {
-      throw gpsError;
-    }
-
-    // Son konumu güncelle
-    setLastLocation(currentLocation);
-
-    // Otomatik varış kontrolü
-    if (destinationCoords) {
-      const distanceToDestination = calculateDistance(currentLocation, destinationCoords);
-      const arrivalRadius = 100; // 100 metre yaklaştığında sefer biter
-
-      if (distanceToDestination <= arrivalRadius) {
-        console.log(`Arrived at destination! Distance: ${distanceToDestination}m`);
-        Alert.alert(
-          'Varış Noktasına Ulaştınız!',
-          `Hedefe ${Math.round(distanceToDestination)}m mesafede. Sefer otomatik olarak tamamlandı.`,
-          [
-            {
-              text: 'Tamam',
-              onPress: () => stopGpsTracking()
-            }
-          ]
-        );
-        return;
-      }
-    }
-
-    // İlk GPS'te görevi "seferde" durumuna getir
-    if (isFirstGps) {
-      const { error: updateError } = await supabase
-        .from('gorevler')
-        .update({
-          sefer_durumu: 'seferde',
-          kabul_edildi_mi: true,
-          baslangic_zamani: new Date().toISOString()
-        })
-        .eq('id', gorevId)
-        .eq('sofor_id', session?.user?.id);
-
-      if (updateError) {
-        throw updateError;
-      }
-    }
-
-    console.log('GPS sent:', { lat: latitude, lon: longitude, speed });
-  };
-
-  // Mesafe hesaplama (Haversine formula)
-  const calculateDistance = (pos1: { lat: number, lon: number }, pos2: { lat: number, lon: number }) => {
-    const R = 6371e3; // Earth radius in meters
-    const φ1 = pos1.lat * Math.PI / 180;
-    const φ2 = pos2.lat * Math.PI / 180;
-    const Δφ = (pos2.lat - pos1.lat) * Math.PI / 180;
-    const Δλ = (pos2.lon - pos1.lon) * Math.PI / 180;
-
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) *
-      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c; // Distance in meters
-  };
-
-  const sendGps = async (gorevId: number) => {
-    if (gpsActive && activeTaskId === gorevId.toString()) {
-      stopGpsTracking();
-    } else {
-      startGpsTracking(gorevId);
-    }
-  };
-
+  // Giriş ve kayıt ekranı
   if (!session) {
     return (
       <KeyboardAvoidingView
@@ -475,20 +394,16 @@ export default function App() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={styles.scrollContainer}>
-          {/* Header */}
           <View style={styles.header}>
             <View style={styles.logoContainer}>
               <View style={styles.brandingTopContainer}>
                 <Animated.View
-                  style={[
-                    styles.kmLogoRainbow,
-                    {
-                      backgroundColor: rainbowAnim.interpolate({
-                        inputRange: [0, 0.16, 0.33, 0.5, 0.66, 0.83, 1],
-                        outputRange: ['#ff6b6b', '#feca57', '#48dbfb', '#0abde3', '#1dd1a1', '#5f27cd', '#ff9ff3']
-                      })
-                    }
-                  ]}
+                  style={[styles.kmLogoRainbow, {
+                    backgroundColor: rainbowAnim.interpolate({
+                      inputRange: [0, 0.16, 0.33, 0.5, 0.66, 0.83, 1],
+                      outputRange: ['#ff6b6b', '#feca57', '#48dbfb', '#0abde3', '#1dd1a1', '#5f27cd', '#ff9ff3']
+                    })
+                  }]}
                 >
                   <Text style={styles.kmLogoText}>KM</Text>
                 </Animated.View>
@@ -498,94 +413,208 @@ export default function App() {
                 <Text style={styles.logoText}>📍</Text>
               </View>
               <Text style={styles.title}>GPS Sefer Takip</Text>
-              <Text style={styles.subtitle}>Şoför Girişi</Text>
+              <Text style={styles.subtitle}>Şoför {showLogin ? 'Giriş' : 'Kayıt'}</Text>
               <Text style={styles.brandingBottom}>Powered by KargoMarketing.com</Text>
             </View>
           </View>
 
-          {/* Auth Modal */}
           <View style={styles.authModal}>
-            {/* Tab Toggle */}
-            <View style={styles.tabContainer}>
-              <TouchableOpacity
-                style={[styles.tab, isLogin && styles.activeTab]}
-                onPress={() => setIsLogin(true)}
-              >
-                <Text style={[styles.tabText, isLogin && styles.activeTabText]}>
-                  Giriş Yap
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tab, !isLogin && styles.activeTab]}
-                onPress={() => setIsLogin(false)}
-              >
-                <Text style={[styles.tabText, !isLogin && styles.activeTabText]}>
-                  Kayıt Ol
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Form */}
-            <View style={styles.form}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="ornek@email.com"
-                  placeholderTextColor="#999"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  style={styles.input}
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Şifre</Text>
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="••••••••"
-                  placeholderTextColor="#999"
-                  secureTextEntry
-                  style={styles.input}
-                />
-              </View>
-
-              {error && (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{error}</Text>
+            {showLogin ? (
+              <>
+                <Text style={styles.title}>Giriş Yap</Text>
+                <Text style={styles.subtitle}>Email ve şifrenizle giriş yapın</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Email"
+                    value={loginData.email}
+                    onChangeText={text => setLoginData({ ...loginData, email: text })}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
                 </View>
-              )}
-
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Şifre"
+                    value={loginData.password}
+                    onChangeText={text => setLoginData({ ...loginData, password: text })}
+                    secureTextEntry
+                  />
+                </View>
+                {error && (
+                  <View style={styles.errorContainer}>
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                )}
+              </>
+            ) : (
+              <>
+                <Text style={styles.title}>Kayıt Ol</Text>
+                <Text style={styles.subtitle}>Tüm alanları eksiksiz doldurun</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ad"
+                    value={registerData.ad}
+                    onChangeText={text => setRegisterData({ ...registerData, ad: text })}
+                    autoCapitalize="words"
+                  />
+                </View>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Soyad"
+                    value={registerData.soyad}
+                    onChangeText={text => setRegisterData({ ...registerData, soyad: text })}
+                    autoCapitalize="words"
+                  />
+                </View>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="TC Kimlik No (11 hane)"
+                    value={registerData.tc_kimlik}
+                    onChangeText={text => setRegisterData({ ...registerData, tc_kimlik: text.replace(/[^0-9]/g, '') })}
+                    keyboardType="numeric"
+                    maxLength={11}
+                  />
+                </View>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Email"
+                    value={registerData.email}
+                    onChangeText={text => setRegisterData({ ...registerData, email: text })}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                </View>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Telefon (+905xxxxxxxxx)"
+                    value={registerData.telefon}
+                    onChangeText={text => setRegisterData({ ...registerData, telefon: text })}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Şifre"
+                    value={registerData.password}
+                    onChangeText={text => setRegisterData({ ...registerData, password: text })}
+                    secureTextEntry
+                  />
+                </View>
+                {error && (
+                  <View style={styles.errorContainer}>
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                )}
+              </>
+            )}
+            {/* Butonlar yanyana */}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10, marginBottom: 10 }}>
               <TouchableOpacity
-                style={[styles.submitButton, loading && styles.disabledButton]}
-                onPress={() => {
-                  console.log('Submit butonu tıklandı, isLogin:', isLogin);
-                  if (isLogin) {
-                    console.log('SignIn çağrılıyor...');
-                    signIn();
+                style={[styles.submitButton, loading && styles.disabledButton, { flex: 1, opacity: showLogin ? 0.7 : 1 }]}
+                onPress={async () => {
+                  if (showLogin) {
+                    // Giriş
+                    setError(null);
+                    if (!loginData.email.trim() || !loginData.password.trim()) {
+                      setError('Email ve şifre zorunlu');
+                      return;
+                    }
+                    setLoading(true);
+                    try {
+                      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+                        email: loginData.email.trim().toLowerCase(),
+                        password: loginData.password
+                      });
+                      if (loginError) {
+                        setError(loginError.message);
+                        setLoading(false);
+                        return;
+                      }
+                      setSession(data.session);
+                      setError(null);
+                    } catch (e: any) {
+                      setError(e?.message || 'Giriş başarısız');
+                    } finally {
+                      setLoading(false);
+                    }
                   } else {
-                    console.log('SignUp çağrılıyor...');
-                    signUp();
+                    // Kayıt
+                    setError(null);
+                    if (!registerData.ad.trim() || !registerData.soyad.trim() || !registerData.tc_kimlik.trim() || !registerData.email.trim() || !registerData.telefon.trim() || !registerData.password.trim()) {
+                      setError('Tüm alanları doldurun');
+                      return;
+                    }
+                    if (registerData.tc_kimlik.length !== 11) {
+                      setError('TC Kimlik No 11 haneli olmalı');
+                      return;
+                    }
+                    if (registerData.telefon.length < 10) {
+                      setError('Telefon en az 10 hane olmalı');
+                      return;
+                    }
+                    setLoading(true);
+                    try {
+                      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                        email: registerData.email.trim().toLowerCase(),
+                        password: registerData.password
+                      });
+                      if (signUpError) {
+                        setError(signUpError.message);
+                        setLoading(false);
+                        return;
+                      }
+                      const userId = signUpData.user?.id;
+                      if (!userId) {
+                        setError('Kullanıcı oluşturulamadı');
+                        setLoading(false);
+                        return;
+                      }
+                      const { error: profileError } = await supabase.from('profiles').upsert({
+                        id: userId,
+                        ad: registerData.ad.trim(),
+                        soyad: registerData.soyad.trim(),
+                        tc_kimlik: registerData.tc_kimlik.trim(),
+                        telefon: registerData.telefon.trim(),
+                        email: registerData.email.trim().toLowerCase()
+                      });
+                      if (profileError) {
+                        setError('Profil kaydı başarısız: ' + profileError.message);
+                        setLoading(false);
+                        return;
+                      }
+                      // Kayıt başarılı, giriş ekranına geç
+                      setShowLogin(true);
+                      setRegisterData({ ad: '', soyad: '', tc_kimlik: '', email: '', telefon: '', password: '' });
+                      setError('Kayıt başarılı! Şimdi giriş yapabilirsiniz.');
+                    } catch (e: any) {
+                      setError(e?.message || 'Kayıt başarısız');
+                    } finally {
+                      setLoading(false);
+                    }
                   }
                 }}
                 disabled={loading}
               >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.submitButtonText}>
-                    {isLogin ? 'Giriş Yap' : 'Hesap Oluştur'}
-                  </Text>
-                )}
+                <Text style={styles.submitButtonText}>{showLogin ? 'Giriş Yap' : 'Kayıt Ol'}</Text>
               </TouchableOpacity>
-
-              {!isLogin && (
-                <Text style={styles.infoText}>
-                  Hesap oluşturduktan sonra giriş yapabilirsiniz.
-                </Text>
-              )}
+              <TouchableOpacity
+                style={[styles.submitButton, styles.disabledButton, { flex: 1, opacity: !showLogin ? 0.7 : 1 }]}
+                onPress={() => {
+                  setError(null);
+                  setShowLogin(!showLogin);
+                }}
+                disabled={loading}
+              >
+                <Text style={styles.submitButtonText}>{showLogin ? 'Kayıt Ol' : 'Giriş Yap'}</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
@@ -593,9 +622,9 @@ export default function App() {
     );
   }
 
+  // Dashboard: atanmış görevler listesi
   return (
     <SafeAreaView style={styles.dashboard}>
-      {/* Header */}
       <View style={styles.dashboardHeader}>
         <View style={styles.dashboardHeaderContent}>
           <View style={styles.dashboardBrandingContainer}>
@@ -616,96 +645,101 @@ export default function App() {
           </View>
           <Text style={styles.welcomeText}>Hoşgeldiniz 👋</Text>
         </View>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={[styles.historyButton, showHistory && styles.historyButtonActive]}
-            onPress={toggleHistory}
-          >
-            <Text style={[styles.historyButtonText, showHistory && styles.historyButtonTextActive]}>
-              {showHistory ? 'Aktif Görevler' : 'Geçmiş'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={signOut}
-          >
-            <Text style={styles.logoutButtonText}>Çıkış Yap</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={() => {
+            signOut();
+          }}
+        >
+          <Text style={styles.logoutButtonText}>Çıkış Yap</Text>
+        </TouchableOpacity>
       </View>
-
-      {/* Tasks Section */}
       <View style={styles.tasksSection}>
-        <Text style={styles.sectionTitle}>
-          {showHistory ? 'Tamamlanan Görevleriniz' : 'Atanmış Görevleriniz'}
-        </Text>
-
-        {/* Aktif Sefer Durumu */}
-        {gpsActive && currentTask && (
-          <View style={styles.activeTaskPanel}>
-            <Text style={styles.activePanelTitle}>🚛 Aktif Sefer</Text>
-            <Text style={styles.activePanelText}>İlan No: {currentTask.ilan_no}</Text>
-            <Text style={styles.activePanelText}>Durum: {currentTask.sefer_durumu}</Text>
-            {destinationCoords && (
-              <Text style={styles.activePanelText}>
-                📍 Hedef: {destinationCoords.lat.toFixed(4)}, {destinationCoords.lon.toFixed(4)}
-              </Text>
-            )}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Atanmış Görevleriniz</Text>
+          <View style={styles.debugButtons}>
+            <TouchableOpacity
+              style={[styles.debugButton, { marginRight: 8 }]}
+              onPress={checkRealDatabaseStatus}
+            >
+              <Text style={styles.debugButtonText}>📊 Gerçek Durum</Text>
+            </TouchableOpacity>
           </View>
-        )}
-
-        {loading && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#3b82f6" />
-          </View>
-        )}
-
-        {!loading && tasks.length === 0 && (
+        </View>
+        {loading ? (
+          <ActivityIndicator size="large" color="#3b82f6" />
+        ) : error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : tasks.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>
-              Henüz atanmış göreviniz bulunmuyor.
+            <Text style={styles.emptyStateText}>🚚 Henüz atanmış göreviniz bulunmuyor</Text>
+            <Text style={styles.emptyStateSubText}>
+              KargoMarketing.com'dan TC kimlik numaranızla görev atandığında burada görünecek.
+            </Text>
+            <Text style={styles.emptyStateSubText}>
+              Görev atanması otomatik olarak yapılır, beklemede kalabilirsiniz.
             </Text>
           </View>
-        )}
-
-        <FlatList
-          data={tasks}
-          keyExtractor={(item) => item.id?.toString()}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
-            <View style={styles.taskCard}>
-              <View style={styles.taskHeader}>
+        ) : (
+          <FlatList
+            data={tasks}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.taskCard}>
                 <Text style={styles.taskTitle}>İlan No: {item.ilan_no}</Text>
-                <View style={styles.taskStatus}>
-                  <Text style={styles.taskStatusText}>{item.sefer_durumu}</Text>
-                </View>
+                {item.tc_kimlik && (
+                  <Text style={styles.taskSubTitle}>TC Kimlik: {item.tc_kimlik}</Text>
+                )}
+                {item.ad && (
+                  <Text style={styles.taskSubTitle}>Ad: {item.ad}</Text>
+                )}
+                <Text style={styles.taskStatusText}>Durum: {item.sefer_durumu}</Text>
+                {item.customer_info && (
+                  <Text style={styles.taskInfoText}>Müşteri: {JSON.stringify(item.customer_info)}</Text>
+                )}
+                {item.delivery_address && (
+                  <Text style={styles.taskInfoText}>Adres: {JSON.stringify(item.delivery_address)}</Text>
+                )}
+
+                {/* GPS Tracking Butonları */}
+                {item.sofor_id === session.user.id && (item.sefer_durumu === 'atandi' || item.sefer_durumu === 'atanmis') && (
+                  <TouchableOpacity
+                    style={styles.gpsButton}
+                    onPress={() => startGPSTracking(item.id)}
+                    disabled={gpsTracking}
+                  >
+                    <Text style={styles.gpsButtonText}>
+                      📍 GPS Takibi Başlat
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {item.sofor_id === session.user.id && item.sefer_durumu === 'yolda' && gpsTracking && activeTaskId === item.id && (
+                  <View>
+                    <TouchableOpacity
+                      style={styles.gpsButtonActive}
+                      onPress={() => stopGPSTracking()}
+                    >
+                      <Text style={styles.gpsButtonText}>
+                        🏁 Seferi Tamamla
+                      </Text>
+                    </TouchableOpacity>
+                    {currentLocation && (
+                      <View style={styles.locationInfo}>
+                        <Text style={styles.locationText}>
+                          📍 Mevcut Konum: {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}
+                        </Text>
+                        <Text style={styles.statusText}>
+                          🔄 GPS Aktif - Anlık takip çalışıyor
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
               </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.gpsButton,
-                  (gpsActive && activeTaskId === item.id.toString()) && styles.gpsButtonActive
-                ]}
-                onPress={() => sendGps(item.id)}
-              >
-                <Text style={styles.gpsButtonText}>
-                  {(gpsActive && activeTaskId === item.id.toString())
-                    ? "� Seferi Bitir"
-                    : "� Sefere Başla"
-                  }
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        />
-
-        {error && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
+            )}
+          />
         )}
-
-        {/* Footer Branding */}
         <View style={styles.footerBranding}>
           <Text style={styles.footerText}>© 2025 KargoMarketing.com</Text>
           <Text style={styles.footerSubText}>Tüm hakları saklıdır</Text>
@@ -1017,6 +1051,27 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     marginBottom: 16,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  debugButton: {
+    backgroundColor: '#8b5cf6',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  debugButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  debugButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   taskCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
@@ -1038,6 +1093,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#1e293b',
+  },
+  taskSubTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#64748b',
+    marginTop: 4,
+  },
+  taskInfoText: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
   },
   taskStatus: {
     paddingHorizontal: 12,
@@ -1073,12 +1139,28 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     padding: 40,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    marginVertical: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   emptyStateText: {
-    fontSize: 16,
-    color: '#64748b',
+    fontSize: 18,
+    color: '#374151',
     textAlign: 'center',
-    marginTop: 16,
+    marginBottom: 12,
+    fontWeight: '600',
+  },
+  emptyStateSubText: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 6,
+    lineHeight: 20,
   },
   activeTaskPanel: {
     backgroundColor: '#10b981',
@@ -1123,6 +1205,27 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontWeight: '400',
   },
+  // GPS Tracking Styles
+  locationInfo: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#0ea5e9',
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#0369a1',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  statusText: {
+    fontSize: 11,
+    color: '#059669',
+    fontWeight: '500',
+    fontStyle: 'italic',
+  },
 });
 
-// Tüm eski ve duplicate kodlar kaldırıldı. Sadece tek bir export default function App() ve sade GPS uygulama kodu kaldı.
+// Tüm gorevId referanslarını kaldırdık, ilgili GPS başlatma ve task işlemleri devre dışı bırakıldı.
