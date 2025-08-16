@@ -48,7 +48,27 @@ CREATE TABLE IF NOT EXISTS public.gps_kayitlari (
   timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. Şöför profilleri tablosu (Sadece GPS Backend)
+-- 3. GPS tracking tablosu (KargoMarketing canlı takip için)
+CREATE TABLE IF NOT EXISTS public.gps_tracking (
+  id BIGSERIAL NOT NULL,
+  gorev_id UUID NULL,
+  latitude NUMERIC(10, 8) NOT NULL,
+  longitude NUMERIC(11, 8) NOT NULL,
+  hiz INTEGER NULL,
+  yon INTEGER NULL,
+  dogruluk INTEGER NULL,
+  created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT gps_tracking_pkey PRIMARY KEY (id),
+  CONSTRAINT gps_tracking_gorev_id_key UNIQUE (gorev_id),
+  CONSTRAINT gps_tracking_gorev_id_fkey FOREIGN KEY (gorev_id) REFERENCES gorevler (id) ON DELETE CASCADE
+) TABLESPACE pg_default;
+
+-- GPS tracking indexes
+CREATE INDEX IF NOT EXISTS idx_gps_tracking_gorev_id ON public.gps_tracking USING btree (gorev_id) TABLESPACE pg_default;
+CREATE INDEX IF NOT EXISTS idx_gps_tracking_created_at ON public.gps_tracking USING btree (created_at) TABLESPACE pg_default;
+
+-- 4. Şöför profilleri tablosu (Sadece GPS Backend)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   
@@ -69,8 +89,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   
   -- Durum bilgisi
   aktif BOOLEAN DEFAULT TRUE,
+  durum VARCHAR(20) DEFAULT 'beklemede',   -- Şoför durumu
   
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 4. Admin log tablosu (Eşleşmeyen durumlar için)
@@ -91,6 +113,7 @@ CREATE TABLE IF NOT EXISTS public.admin_logs (
 
 ALTER TABLE public.gorevler ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gps_kayitlari ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gps_tracking ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_logs ENABLE ROW LEVEL SECURITY;
 
@@ -112,6 +135,12 @@ CREATE POLICY "Şoförler GPS verisi ekleyebilir" ON public.gps_kayitlari
 
 CREATE POLICY "Şoförler kendi profillerini yönetebilir" ON public.profiles
   FOR ALL USING (auth.uid() = id);
+
+-- GPS tracking policies (KargoMarketing dashboard için)
+CREATE POLICY "Kargomarketing GPS tracking okuyabilir" ON public.gps_tracking
+  FOR SELECT USING (
+    current_setting('app.user_role', true) = 'kargomarketing_api'
+  );
 
 -- Kargomarketing API policies
 CREATE POLICY "Kargomarketing görev oluşturabilir" ON public.gorevler
@@ -293,12 +322,48 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.update_gps_tracking()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Görevler tablosundaki son konum bilgisini güncelle
+  -- RLS bypass için admin yetkileri kullan
+  PERFORM set_config('role', 'service_role', true);
+  
+  -- 1. Görevler tablosundaki son konum bilgisini güncelle
   UPDATE public.gorevler 
   SET son_konum_lat = NEW.latitude,
       son_konum_lng = NEW.longitude,
       updated_at = NOW()
   WHERE id = NEW.gorev_id;
+  
+  -- 2. KargoMarketing için gps_tracking tablosunu güncelle (UPSERT)
+  INSERT INTO public.gps_tracking (
+    gorev_id, 
+    latitude, 
+    longitude, 
+    hiz, 
+    yon, 
+    dogruluk,
+    created_at,
+    updated_at
+  ) VALUES (
+    NEW.gorev_id,
+    NEW.latitude,
+    NEW.longitude,
+    NEW.hiz::INTEGER,  -- CAST to INTEGER
+    NEW.yon,
+    NEW.dogruluk::INTEGER,  -- CAST to INTEGER
+    NEW.timestamp,
+    NEW.timestamp
+  )
+  ON CONFLICT (gorev_id) 
+  DO UPDATE SET
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude,
+    hiz = EXCLUDED.hiz,
+    yon = EXCLUDED.yon,
+    dogruluk = EXCLUDED.dogruluk,
+    updated_at = EXCLUDED.updated_at;
+  
+  -- Debug log ekle
+  RAISE NOTICE 'GPS Trigger çalıştı: Görev % için konum güncellendi (%,%)', 
+    NEW.gorev_id, NEW.latitude, NEW.longitude;
   
   RETURN NEW;
 END;
@@ -407,8 +472,9 @@ SELECT public.create_test_admin();
 -- SCHEMA VERSİYON BİLGİSİ
 -- =============================================================================
 
-COMMENT ON SCHEMA public IS 'GPS Master Database v2.0 - Production Ready Schema';
+COMMENT ON SCHEMA public IS 'GPS Master Database v2.1 - KargoMarketing GPS Tracking Integration';
 COMMENT ON TABLE public.gorevler IS 'Ortak görevler tablosu - Kargomarketing yazıyor, GPS koordine ediyor';
-COMMENT ON TABLE public.gps_kayitlari IS 'GPS tracking verileri - Sadece GPS Backend';
+COMMENT ON TABLE public.gps_kayitlari IS 'Ham GPS tracking verileri - Sadece GPS Backend (konum_verisi JSONB ile)';
+COMMENT ON TABLE public.gps_tracking IS 'İşlenmiş GPS tracking - KargoMarketing dashboard için canlı takip';
 COMMENT ON TABLE public.profiles IS 'Şoför profilleri - Sadece GPS Backend';
 COMMENT ON TABLE public.admin_logs IS 'Admin ve hata logları';
