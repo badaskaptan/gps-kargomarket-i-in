@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KM Logo Generator</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+        }
+        .generator {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        .logo-preview {
+            margin: 20px 0;
+        }
+        .km-logo {
+            width: 512px;
+            height: 512px;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            border-radius: 128px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 20px 40px rgba(59, 130, 246, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        .km-logo::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: conic-gradient(
+                from 0deg,
+                #ff6b6b,
+                #feca57,
+                #48dbfb,
+                #0abde3,
+                #1dd1a1,
+                #5f27cd,
+                #ff9ff3,
+                #ff6b6b
+            );
+            animation: rotate 6s linear infinite;
+            z-index: -1;
+        }
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .km-text {
+            color: white;
+            font-size: 200px;
+            font-weight: 900;
+            text-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            letter-spacing: -20px;
+            z-index: 1;
+        }
+        .download-area {
+            margin: 30px 0;
+        }
+        canvas {
+            border: 2px solid #ddd;
+            margin: 10px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="generator">
+        <h1>KargoMarketing KM Logo Generator</h1>
+        <div class="logo-preview">
+            <div class="km-logo">
+                <div class="km-text">KM</div>
+            </div>
+        </div>
+        
+        <div class="download-area">
+            <h3>Generated Logo Files:</h3>
+            <canvas id="icon512" width="512" height="512"></canvas>
+            <canvas id="icon192" width="192" height="192"></canvas>
+            <canvas id="icon1024" width="1024" height="1024"></canvas>
+            <br>
+            <button onclick="generateIcons()">Generate All Icons</button>
+            <button onclick="downloadIcon('icon512', 'icon.png')">Download 512x512</button>
+            <button onclick="downloadIcon('icon192', 'adaptive-icon.png')">Download 192x192</button>
+            <button onclick="downloadIcon('icon1024', 'splash-icon.png')">Download 1024x1024</button>
+        </div>
+    </div>
+
+    <script>
+        function drawKMLogo(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            const centerX = size / 2;
+            const centerY = size / 2;
+            const radius = size / 2 - 20;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, size, size);
+            
+            // Create gradient background
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#3b82f6');
+            gradient.addColorStop(1, '#1d4ed8');
+            
+            // Draw circle background
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // Add subtle shadow
+            ctx.shadowColor = 'rgba(59, 130, 246, 0.4)';
+            ctx.shadowBlur = 20;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 10;
+            
+            // Draw outer ring (rainbow effect simulation)
+            const ringGradient = ctx.createLinearGradient(0, 0, size, size);
+            ringGradient.addColorStop(0, '#ff6b6b');
+            ringGradient.addColorStop(0.2, '#feca57');
+            ringGradient.addColorStop(0.4, '#48dbfb');
+            ringGradient.addColorStop(0.6, '#1dd1a1');
+            ringGradient.addColorStop(0.8, '#5f27cd');
+            ringGradient.addColorStop(1, '#ff9ff3');
+            
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius + 15, 0, 2 * Math.PI);
+            ctx.lineWidth = 8;
+            ctx.strokeStyle = ringGradient;
+            ctx.stroke();
+            
+            // Reset shadow
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            
+            // Draw KM text
+            ctx.fillStyle = 'white';
+            ctx.font = `900 ${size * 0.35}px Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Add text shadow
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = size * 0.02;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = size * 0.01;
+            
+            ctx.fillText('KM', centerX, centerY);
+        }
+        
+        function generateIcons() {
+            const sizes = [
+                { id: 'icon512', size: 512 },
+                { id: 'icon192', size: 192 },
+                { id: 'icon1024', size: 1024 }
+            ];
+            
+            sizes.forEach(({id, size}) => {
+                const canvas = document.getElementById(id);
+                canvas.width = size;
+                canvas.height = size;
+                drawKMLogo(canvas, size);
+            });
+        }
+        
+        function downloadIcon(canvasId, filename) {
+            const canvas = document.getElementById(canvasId);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        // Generate icons on page load
+        window.onload = function() {
+            generateIcons();
+        };
+    </script>
+</body>
+</html>

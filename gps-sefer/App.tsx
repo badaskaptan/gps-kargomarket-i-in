@@ -729,35 +729,37 @@ export default function App() {
             >
               <Text style={styles.dashboardKmLogoText}>KM</Text>
             </Animated.View>
-            <Text style={styles.dashboardBranding}>KargoMarketing.com GPS Takip Sistemi</Text>
+            <Text style={styles.dashboardBranding}>GPS Takip Sistemi</Text>
           </View>
-          <Text style={styles.welcomeText}>Hoşgeldiniz 👋</Text>
+          <Text style={styles.welcomeText}>Atanmış Görevler 📋</Text>
         </View>
-        <TouchableOpacity
-          style={styles.logoutButton}
-          onPress={() => {
-            signOut();
-          }}
-        >
-          <Text style={styles.logoutButtonText}>Çıkış Yap</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={styles.debugButton}
+            onPress={checkRealDatabaseStatus}
+          >
+            <Text style={styles.debugButtonText}>�</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={() => {
+              signOut();
+            }}
+          >
+            <Text style={styles.logoutButtonText}>Çıkış</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <View style={styles.tasksSection}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Atanmış Görevleriniz</Text>
-          <View style={styles.debugButtons}>
-            <TouchableOpacity
-              style={[styles.debugButton, { marginRight: 8 }]}
-              onPress={checkRealDatabaseStatus}
-            >
-              <Text style={styles.debugButtonText}>📊 Gerçek Durum</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
         {loading ? (
-          <ActivityIndicator size="large" color="#3b82f6" />
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#3b82f6" />
+            <Text style={styles.emptyStateSubText}>Görevler yükleniyor...</Text>
+          </View>
         ) : error ? (
-          <Text style={styles.errorText}>{error}</Text>
+          <View style={styles.emptyState}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
         ) : tasks.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateText}>🚚 Henüz atanmış göreviniz bulunmuyor</Text>
@@ -769,90 +771,104 @@ export default function App() {
             </Text>
           </View>
         ) : (
-          <FlatList
+            <FlatList
             data={tasks}
             keyExtractor={item => item.id}
             renderItem={({ item }) => (
               <View style={styles.taskCard}>
-                <Text style={styles.taskTitle}>İlan No: {item.ilan_no}</Text>
-                {item.tc_kimlik && (
-                  <Text style={styles.taskSubTitle}>TC Kimlik: {item.tc_kimlik}</Text>
-                )}
-                {item.ad && (
-                  <Text style={styles.taskSubTitle}>Ad: {item.ad}</Text>
-                )}
-                <Text style={styles.taskStatusText}>
-                  Durum: {item.durum === 'atandi' ? '✅ Kabul Edildi' : '⏳ Beklemede'}
-                </Text>
-                <Text style={styles.taskStatusText}>
-                  Kabul: {item.kabul_edildi_mi ? '✅ Evet' : '❌ Hayır'}
-                </Text>
-                <Text style={styles.taskStatusText}>
-                  Sefer: {item.sefer_durumu || 'Henüz başlamadı'}
-                </Text>
-                {item.customer_info && (
-                  <Text style={styles.taskInfoText}>Müşteri: {JSON.stringify(item.customer_info)}</Text>
-                )}
-                {item.delivery_address && (
-                  <Text style={styles.taskInfoText}>Adres: {JSON.stringify(item.delivery_address)}</Text>
-                )}
-
-                {/* 1. GÖREV KABUL ET BUTONU - Durum: sofor_bulunamadi -> atandi */}
-                {item.sofor_id === session.user.id && item.durum === 'sofor_bulunamadi' && (
-                  <TouchableOpacity
-                    style={styles.acceptButton}
-                    onPress={() => acceptTask(item.id)}
-                    disabled={loading}
-                  >
-                    <Text style={styles.acceptButtonText}>
-                      ✅ Görevi Kabul Et
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* 2. SEFERİ BAŞLAT BUTONU - Durum: atandi, kabul_edildi_mi: true ve sefer_durumu: atandi/null */}
-                {item.sofor_id === session.user.id && item.durum === 'atandi' && item.kabul_edildi_mi === true && (item.sefer_durumu === 'atandi' || !item.sefer_durumu) && (
-                  <TouchableOpacity
-                    style={styles.gpsButton}
-                    onPress={() => startGPSTracking(item.id)}
-                    disabled={gpsTracking}
-                  >
-                    <Text style={styles.gpsButtonText}>
-                      📍 Seferi Başlat
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* 3. SEFERİ TAMAMLA BUTONU - Sefer durumu: yolda */}
-                {item.sofor_id === session.user.id && item.sefer_durumu === 'yolda' && gpsTracking && activeTaskId === item.id && (
-                  <View>
-                    <TouchableOpacity
-                      style={styles.gpsButtonActive}
-                      onPress={() => stopGPSTracking()}
-                    >
-                      <Text style={styles.gpsButtonText}>
-                        🏁 Seferi Tamamla
-                      </Text>
-                    </TouchableOpacity>
-                    {currentLocation && (
-                      <View style={styles.locationInfo}>
-                        <Text style={styles.locationText}>
-                          📍 Mevcut Konum: {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}
-                        </Text>
-                        <Text style={styles.statusText}>
-                          🔄 GPS Aktif - Anlık takip çalışıyor
-                        </Text>
-                      </View>
+                <View style={styles.taskHeader}>
+                  <View style={styles.taskHeaderLeft}>
+                    <Text style={styles.taskTitle}>İlan No: {item.ilan_no}</Text>
+                    {item.ad && (
+                      <Text style={styles.taskSubTitle}>{item.ad}</Text>
                     )}
                   </View>
-                )}
+                  <View style={styles.taskStatusBadge}>
+                    <Text style={styles.taskStatusBadgeText}>
+                      {item.sefer_durumu === 'yolda' ? '🚛 Yolda' :
+                       item.sefer_durumu === 'tamamlandi' ? '✅ Tamamlandı' :
+                       item.kabul_edildi_mi ? '📋 Kabul Edildi' : '⏳ Bekliyor'}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.taskInfoGrid}>
+                  <View style={styles.taskInfoRow}>
+                    <Text style={styles.taskInfoLabel}>Durum:</Text>
+                    <Text style={styles.taskInfoValue}>
+                      {item.durum === 'atandi' ? 'Kabul Edildi' : 'Beklemede'}
+                    </Text>
+                  </View>
+                  <View style={styles.taskInfoRow}>
+                    <Text style={styles.taskInfoLabel}>Sefer:</Text>
+                    <Text style={styles.taskInfoValue}>
+                      {item.sefer_durumu || 'Henüz başlamadı'}
+                    </Text>
+                  </View>
+                  {item.tc_kimlik && (
+                    <View style={styles.taskInfoRow}>
+                      <Text style={styles.taskInfoLabel}>TC:</Text>
+                      <Text style={styles.taskInfoValue}>{item.tc_kimlik}</Text>
+                    </View>
+                  )}
+                </View>                <View style={styles.taskButtonsContainer}>
+                  {/* 1. GÖREV KABUL ET BUTONU */}
+                  {item.sofor_id === session.user.id && item.durum === 'sofor_bulunamadi' && (
+                    <TouchableOpacity
+                      style={[styles.acceptButton, styles.primaryButton]}
+                      onPress={() => acceptTask(item.id)}
+                      disabled={loading}
+                    >
+                      <Text style={styles.acceptButtonText}>
+                        ✅ Görevi Kabul Et
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* 2. SEFERİ BAŞLAT BUTONU */}
+                  {item.sofor_id === session.user.id && item.durum === 'atandi' && item.kabul_edildi_mi === true && (item.sefer_durumu === 'atandi' || !item.sefer_durumu) && (
+                    <TouchableOpacity
+                      style={[styles.gpsButton, styles.successButton]}
+                      onPress={() => startGPSTracking(item.id)}
+                      disabled={gpsTracking}
+                    >
+                      <Text style={styles.gpsButtonText}>
+                        📍 Seferi Başlat
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* 3. SEFERİ TAMAMLA BUTONU */}
+                  {item.sofor_id === session.user.id && item.sefer_durumu === 'yolda' && gpsTracking && activeTaskId === item.id && (
+                    <View>
+                      <TouchableOpacity
+                        style={[styles.gpsButtonActive, styles.warningButton]}
+                        onPress={() => stopGPSTracking()}
+                      >
+                        <Text style={styles.gpsButtonText}>
+                          🏁 Seferi Tamamla
+                        </Text>
+                      </TouchableOpacity>
+                      {currentLocation && (
+                        <View style={styles.locationInfo}>
+                          <Text style={styles.locationText}>
+                            📍 Mevcut Konum: {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}
+                          </Text>
+                          <Text style={styles.statusText}>
+                            🔄 GPS Aktif - Anlık takip çalışıyor
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
               </View>
             )}
           />
         )}
         <View style={styles.footerBranding}>
-          <Text style={styles.footerText}>© 2025 KargoMarketing.com</Text>
-          <Text style={styles.footerSubText}>Tüm hakları saklıdır</Text>
+          <Text style={styles.footerText}>KargoMarketing.com GPS Takip</Text>
+          <Text style={styles.footerSubText}>© 2025 - Tüm hakları saklıdır</Text>
         </View>
       </View>
     </SafeAreaView>
@@ -866,10 +882,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
   },
   scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    minHeight: height,
-    paddingHorizontal: 10, // Yan kenar boşlukları
+  flexGrow: 1,
+  justifyContent: 'center',
+  minHeight: height,
+  paddingHorizontal: 16, // Yan kenar boşlukları artırıldı
+  paddingBottom: 64, // Alt boşluk artırıldı
   },
   header: {
     alignItems: 'center',
@@ -1012,14 +1029,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    height: 56,
-    borderWidth: 2,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    backgroundColor: '#ffffff',
-    color: '#374151',
+  height: 60,
+  borderWidth: 2.5,
+  borderColor: '#0ea5e9',
+  borderRadius: 16,
+  paddingHorizontal: 20,
+  fontSize: 18,
+  backgroundColor: '#ffffff',
+  color: '#1e293b',
+  marginBottom: 10,
+  elevation: 2,
   },
   errorContainer: {
     backgroundColor: '#fef2f2',
@@ -1227,31 +1246,35 @@ const styles = StyleSheet.create({
     color: '#d97706',
   },
   gpsButton: {
-    backgroundColor: '#10b981',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 12,
+  backgroundColor: '#10b981',
+  borderRadius: 18,
+  paddingVertical: 18,
+  alignItems: 'center',
+  marginTop: 18,
+  elevation: 2,
   },
   acceptButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 12,
+  backgroundColor: '#3b82f6',
+  borderRadius: 18,
+  paddingVertical: 18,
+  alignItems: 'center',
+  marginTop: 18,
+  elevation: 2,
   },
   gpsButtonActive: {
     backgroundColor: '#f59e0b',
   },
   gpsButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
+  color: '#ffffff',
+  fontSize: 20,
+  fontWeight: '700',
+  letterSpacing: 0.5,
   },
   acceptButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
+  color: '#ffffff',
+  fontSize: 20,
+  fontWeight: '700',
+  letterSpacing: 0.5,
   },
   loadingContainer: {
     flex: 1,
@@ -1259,16 +1282,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyState: {
-    alignItems: 'center',
-    padding: 40,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    marginVertical: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  alignItems: 'center',
+  padding: 48,
+  backgroundColor: '#ffffff',
+  borderRadius: 22,
+  marginVertical: 28,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.13,
+  shadowRadius: 12,
+  elevation: 4,
   },
   emptyStateText: {
     fontSize: 18,
@@ -1285,16 +1308,16 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   activeTaskPanel: {
-    backgroundColor: '#10b981',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    marginHorizontal: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  backgroundColor: '#10b981',
+  borderRadius: 22,
+  padding: 24,
+  marginBottom: 24,
+  marginHorizontal: 12,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.15,
+  shadowRadius: 16,
+  elevation: 5,
   },
   activePanelTitle: {
     fontSize: 18,
@@ -1330,10 +1353,10 @@ const styles = StyleSheet.create({
   // GPS Tracking Styles
   locationInfo: {
     backgroundColor: '#f0f9ff',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
-    borderWidth: 1,
+    borderRadius: 14,
+    padding: 18,
+    marginTop: 14,
+    borderWidth: 2,
     borderColor: '#0ea5e9',
   },
   locationText: {
@@ -1348,6 +1371,60 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontStyle: 'italic',
   },
+  // Yeni dashboard stil tanımları
+  taskHeaderLeft: {
+    flex: 1,
+  },
+  taskStatusBadge: {
+    backgroundColor: '#e0f2fe',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#0ea5e9',
+  },
+  taskStatusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0369a1',
+    textAlign: 'center',
+  },
+  taskInfoGrid: {
+    marginVertical: 16,
+  },
+  taskInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  taskInfoLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748b',
+    flex: 1,
+  },
+  taskInfoValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1e293b',
+    flex: 2,
+    textAlign: 'right',
+  },
+  // Button container ve ek buton stilleri
+  taskButtonsContainer: {
+    marginTop: 16,
+    gap: 12,
+  },
+  primaryButton: {
+    backgroundColor: '#3b82f6',
+  },
+  successButton: {
+    backgroundColor: '#10b981',
+  },
+  warningButton: {
+    backgroundColor: '#f59e0b',
+  },
 });
-
-// Tüm gorevId referanslarını kaldırdık, ilgili GPS başlatma ve task işlemleri devre dışı bırakıldı.
