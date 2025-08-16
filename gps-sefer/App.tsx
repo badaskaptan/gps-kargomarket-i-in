@@ -19,6 +19,9 @@ import {
   Animated
 } from 'react-native';
 import * as Location from 'expo-location';
+import * as Device from 'expo-device';
+import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -62,6 +65,67 @@ export default function App() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [gpsTracking, setGpsTracking] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number, lng: number } | null>(null);
+
+  // GPS veri gönderme fonksiyonu (KargoMarketing uyumlu format)
+  const sendGPSData = async (location: any, taskId: string, userId: string) => {
+    try {
+      // Device bilgilerini topla
+      const deviceInfo = {
+        model: Device.modelName || 'Unknown',
+        os: `${Device.osName || 'Unknown'} ${Device.osVersion || ''}`,
+        app_version: Application.nativeApplicationVersion || '1.0.0',
+        battery_level: 85, // Static değer - gerçek batarya API'si için expo-battery gerekli
+        signal_strength: 4 // Static değer - gerçek sinyal gücü API'si gerekli
+      };
+
+      // GPS metadata
+      const gpsMetadata = {
+        satellites: 8, // Static değer - expo-location bu bilgiyi sağlamıyor
+        hdop: 1.2, // Static değer
+        altitude: location.coords.altitude || 0,
+        speed_accuracy: location.coords.speed || 0,
+        bearing_accuracy: location.coords.heading || 0
+      };
+
+      // KargoMarketing uyumlu konum_verisi JSONB
+      const konum_verisi = {
+        device_info: deviceInfo,
+        gps_metadata: gpsMetadata,
+        timestamp_device: new Date().toISOString(),
+        location_source: "GPS",
+        collection_method: "automatic"
+      };
+
+      // GPS kaydını veritabanına ekle
+      const { data, error } = await supabase
+        .from('gps_kayitlari')
+        .insert({
+          gorev_id: taskId,
+          sofor_id: userId,
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          hiz: location.coords.speed || 0,
+          yon: location.coords.heading || 0,
+          dogruluk: location.coords.accuracy || 0,
+          konum_verisi: konum_verisi  // ✅ JSONB alan dolduruldu
+        });
+
+      if (error) {
+        console.error('GPS veri gönderme hatası:', error);
+        return false;
+      }
+      
+      console.log('✅ GPS verisi KargoMarketing uyumlu formatta gönderildi:', data);
+      console.log('📋 Gönderilen konum_verisi:', JSON.stringify(konum_verisi, null, 2));
+      console.log('🔄 Trigger tetiklenmelidir: gorevler ve gps_tracking güncellenecek');
+      console.log('📍 Koordinat:', location.coords.latitude, location.coords.longitude);
+      console.log('🎯 Görev ID:', taskId, 'Şoför ID:', userId);
+      return true;
+    } catch (error) {
+      console.error('GPS veri gönderme hatası:', error);
+      return false;
+    }
+  };
 
   // Debug: Gerçek veritabanı durumu kontrolü
   const checkRealDatabaseStatus = async () => {
@@ -205,18 +269,8 @@ export default function App() {
       };
       setCurrentLocation(newLocation);
 
-      // GPS kaydını veritabanına ekle
-      await supabase
-        .from('gps_kayitlari')
-        .insert({
-          gorev_id: taskId,
-          sofor_id: session.user.id,
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          hiz: location.coords.speed || 0,
-          yon: location.coords.heading || 0,
-          dogruluk: location.coords.accuracy || 0
-        });
+      // GPS kaydını KargoMarketing uyumlu formatta gönder
+      await sendGPSData(location, taskId, session.user.id);
 
       console.log('GPS tracking başlatıldı');
     } catch (error: any) {
@@ -267,18 +321,8 @@ export default function App() {
           };
           setCurrentLocation(newLocation);
 
-          // GPS kaydını veritabanına ekle
-          await supabase
-            .from('gps_kayitlari')
-            .insert({
-              gorev_id: activeTaskId,
-              sofor_id: session.user.id,
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-              hiz: location.coords.speed || 0,
-              yon: location.coords.heading || 0,
-              dogruluk: location.coords.accuracy || 0
-            });
+          // GPS kaydını KargoMarketing uyumlu formatta gönder
+          await sendGPSData(location, activeTaskId, session.user.id);
 
           console.log('GPS location güncellendi:', newLocation);
         } catch (error) {
