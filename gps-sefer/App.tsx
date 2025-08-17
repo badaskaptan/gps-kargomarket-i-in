@@ -512,6 +512,7 @@ export default function App() {
                 <Text style={styles.title}>Giriş Yap</Text>
                 <Text style={styles.subtitle}>Email ve şifrenizle giriş yapın</Text>
                 <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Email</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Email"
@@ -522,6 +523,7 @@ export default function App() {
                   />
                 </View>
                 <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Şifre</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Şifre"
@@ -541,6 +543,7 @@ export default function App() {
                 <Text style={styles.title}>Kayıt Ol</Text>
                 <Text style={styles.subtitle}>Tüm alanları eksiksiz doldurun</Text>
                 <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Ad</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Ad"
@@ -550,6 +553,7 @@ export default function App() {
                   />
                 </View>
                 <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Soyad</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Soyad"
@@ -559,6 +563,7 @@ export default function App() {
                   />
                 </View>
                 <View style={styles.inputContainer}>
+                  <Text style={styles.label}>TC Kimlik No</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="TC Kimlik No (11 hane)"
@@ -569,6 +574,7 @@ export default function App() {
                   />
                 </View>
                 <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Email</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Email"
@@ -579,6 +585,7 @@ export default function App() {
                   />
                 </View>
                 <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Telefon</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Telefon (+905xxxxxxxxx)"
@@ -588,6 +595,7 @@ export default function App() {
                   />
                 </View>
                 <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Şifre</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Şifre"
