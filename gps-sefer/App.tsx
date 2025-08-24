@@ -95,6 +95,23 @@ export default function App() {
     }
   };
 
+  const clearArchive = async () => {
+    if (!archivedTaskIds.length) return;
+    Alert.alert('Arşivi Temizle', 'Tüm arşivlenmiş görevler listeden geri dönecek. Emin misiniz?', [
+      { text: 'İptal', style: 'cancel' },
+      {
+        text: 'Temizle', style: 'destructive', onPress: async () => {
+          try {
+            await AsyncStorage.removeItem('archived_tasks');
+            setArchivedTaskIds([]);
+          } catch (e: any) {
+            Alert.alert('Hata', 'Arşiv silinemedi: ' + (e?.message || ''));
+          }
+        }
+      }
+    ]);
+  };
+
   // GPS veri gönderme fonksiyonu (KargoMarketing uyumlu format)
   const sendGPSData = async (location: any, taskId: string, userId: string) => {
     try {
@@ -785,6 +802,15 @@ export default function App() {
               {showArchived ? 'Aktif' : 'Arşiv'}
             </Text>
           </TouchableOpacity>
+          {showArchived && (
+            <TouchableOpacity
+              style={[styles.historyButton, { backgroundColor: '#ef4444' }]}
+              onPress={clearArchive}
+              disabled={!archivedTaskIds.length}
+            >
+              <Text style={[styles.historyButtonText, { color: '#fff', fontWeight: '700' }]}>Temizle</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.logoutButton}
             onPress={() => {
