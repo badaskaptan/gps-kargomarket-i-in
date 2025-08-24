@@ -44,6 +44,9 @@ export default function App() {
   // Oturum ve görevler için state
   const [session, setSession] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
+  // Arşivlenmiş tamamlanmış görev ID listesi
+  const [archivedTaskIds, setArchivedTaskIds] = useState<string[]>([]);
+  const [showArchived, setShowArchived] = useState(false); // Arşivdeki görevleri görüntüleme anahtarı
   const [registerData, setRegisterData] = useState({
     ad: '',
     soyad: '',
@@ -65,6 +68,32 @@ export default function App() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [gpsTracking, setGpsTracking] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number, lng: number } | null>(null);
+  // Arşiv bilgilerini oturum değiştiğinde yükle
+  useEffect(() => {
+    const loadArchived = async () => {
+      try {
+        const raw = await AsyncStorage.getItem('archived_tasks');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setArchivedTaskIds(parsed);
+        }
+      } catch (e) {
+        console.warn('Arşiv yükleme hatası', e);
+      }
+    };
+    loadArchived();
+  }, [session?.user?.id]);
+
+  const archiveTask = async (taskId: string) => {
+    try {
+      if (archivedTaskIds.includes(taskId)) return;
+      const updated = [...archivedTaskIds, taskId];
+      setArchivedTaskIds(updated);
+      await AsyncStorage.setItem('archived_tasks', JSON.stringify(updated));
+    } catch (e: any) {
+      Alert.alert('Hata', 'Görev arşivlenemedi: ' + (e?.message || ''));
+    }
+  };
 
   // GPS veri gönderme fonksiyonu (KargoMarketing uyumlu format)
   const sendGPSData = async (location: any, taskId: string, userId: string) => {
@@ -749,6 +778,14 @@ export default function App() {
             <Text style={styles.debugButtonText}>�</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.historyButton, showArchived && styles.historyButtonActive]}
+            onPress={() => setShowArchived(!showArchived)}
+          >
+            <Text style={[styles.historyButtonText, showArchived && styles.historyButtonTextActive]}>
+              {showArchived ? 'Aktif' : 'Arşiv'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.logoutButton}
             onPress={() => {
               signOut();
@@ -780,7 +817,9 @@ export default function App() {
           </View>
         ) : (
             <FlatList
-            data={tasks}
+            data={(showArchived
+              ? tasks.filter(t => t.sefer_durumu === 'tamamlandi' && archivedTaskIds.includes(t.id))
+              : tasks.filter(t => !(t.sefer_durumu === 'tamamlandi' && archivedTaskIds.includes(t.id))))}
             keyExtractor={item => item.id}
             renderItem={({ item }) => (
               <View style={styles.taskCard}>
@@ -870,6 +909,20 @@ export default function App() {
                     </View>
                   )}
                 </View>
+                {/* Tamamlanan görevler için Arşivle butonu */}
+                {item.sefer_durumu === 'tamamlandi' && !archivedTaskIds.includes(item.id) && !showArchived && (
+                  <TouchableOpacity
+                    style={[styles.gpsButton, styles.primaryButton]}
+                    onPress={() => archiveTask(item.id)}
+                  >
+                    <Text style={styles.gpsButtonText}>📦 Arşivle</Text>
+                  </TouchableOpacity>
+                )}
+                {item.sefer_durumu === 'tamamlandi' && archivedTaskIds.includes(item.id) && showArchived && (
+                  <View style={{ marginTop: 12, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600' }}>📦 Arşivlendi</Text>
+                  </View>
+                )}
               </View>
             )}
           />
